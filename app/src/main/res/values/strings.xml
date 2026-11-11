@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">PhoneGuard</string>
+    <string name="tile_clean">Quick clean</string>
+</resources>
