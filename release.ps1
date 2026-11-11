@@ -13,7 +13,7 @@ if($code -eq 0){
   $vn=[regex]::Match($g,'versionName = "([^"]+)"').Groups[1].Value
   New-Item -ItemType Directory -Force "$p\dist" | Out-Null
   Copy-Item "$p\app\build\outputs\apk\release\app-release.apk" "$p\dist\phoneguard.apk" -Force
-  $sha=(Get-FileHash "$p\dist\phoneguard.apk" -Algorithm SHA256).Hash.ToLower()
+  $sha=-join ([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes("$p\dist\phoneguard.apk")) | ForEach-Object { $_.ToString("x2") })
   $json='{"versionCode":'+$vc+',"versionName":"'+$vn+'","url":"https://github.com/harish4000/phoneguard/releases/download/v'+$vn+'/phoneguard.apk","sha256":"'+$sha+'"}'
   [IO.File]::WriteAllText("$p\dist\update.json",$json)
   if($Publish){ gh release create "v$vn" "$p\dist\phoneguard.apk" "$p\dist\update.json" --title "v$vn" --notes "PhoneGuard $vn" >> "$p\build.log" 2>&1; $code=$LASTEXITCODE }
