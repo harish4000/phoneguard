@@ -31,12 +31,15 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           test -n "$KEYSTORE_B64" || { echo "Signing key secret is missing"; exit 1; }
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/phoneguard.jks"
+          # The secrets were set from Windows, so strip any byte-order mark or line ending first.
+          printf '%s' "$KEYSTORE_B64" | tr -cd 'A-Za-z0-9+/=' | base64 -d > "$RUNNER_TEMP/phoneguard.jks"
+          pw=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -cd 'A-Za-z0-9')
+          keytool -list -keystore "$RUNNER_TEMP/phoneguard.jks" -storepass "$pw" -alias phoneguard >/dev/null
           {
             echo "storeFile=$RUNNER_TEMP/phoneguard.jks"
-            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "storePassword=$pw"
             echo "keyAlias=phoneguard"
-            echo "keyPassword=$KEYSTORE_PASSWORD"
+            echo "keyPassword=$pw"
           } > keystore.properties
       - name: Build signed APK
         run: gradle --no-daemon --console=plain assembleRelease
