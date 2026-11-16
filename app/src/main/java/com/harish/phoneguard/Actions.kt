@@ -57,7 +57,7 @@ object Rogue {
 
     /** Current CPU use per process name as name to percent, highest first. */
     fun top(): List<Pair<String, Float>> =
-        Shell.run("top -b -n 1 -m 25 -o %CPU,NAME").out.lines().mapNotNull {
+        Shell.run("top -b -n 1 -m 25 -s 1 -o %CPU,NAME").out.lines().mapNotNull {
             val t = it.trim().split(Regex("\\s+"))
             val cpu = t.getOrNull(0)?.toFloatOrNull()
             val name = t.getOrNull(1)?.substringBefore(':')
