@@ -8,7 +8,7 @@ import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ApplicationInfo
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
@@ -56,6 +56,13 @@ class MonitorService : Service() {
     private var chargeAlerted = false
     private var hotChargeAlerted = false
 
+    /** Scans as soon as an app is installed or updated. Runs on the monitor thread. */
+    private val installs = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            try { scanAndAlert() } catch (e: Throwable) { }
+        }
+    }
+
     private val loop = object : Runnable {
         override fun run() {
             try { tick() } catch (e: Throwable) { Store.log("Monitor error: ${e.message}") }
@@ -73,11 +80,13 @@ class MonitorService : Service() {
         thread = HandlerThread("phoneguard").apply { start() }
         h = Handler(thread.looper)
         h.post(loop)
+        val f = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
+        registerReceiver(installs, f, null, h, Context.RECEIVER_NOT_EXPORTED)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onDestroy() { thread.quitSafely(); super.onDestroy() }
+    override fun onDestroy() { try { unregisterReceiver(installs) } catch (e: Exception) { }; thread.quitSafely(); super.onDestroy() }
 
     private fun tick() {
         n++
@@ -89,7 +98,7 @@ class MonitorService : Service() {
         thermalGuard(b, th)
         chargeGuard(b)
         val screenOn = getSystemService(PowerManager::class.java).isInteractive
-        if (ready && screenOn && !cooling && Store.bool("auto", true)) autoProfile()
+        if (screenOn && !cooling) Smart.tick(this, b)
         if (ready && n % 10 == 0L) Rogue.sample(this, Usage.foreground(this))
         if (n % 20 == 1L) housekeeping(ready, screenOn)
     }
@@ -137,27 +146,21 @@ class MonitorService : Service() {
         }
     }
 
-    private fun autoProfile() {
-        val fg = Usage.foreground(this) ?: return
-        val cat = try { packageManager.getApplicationInfo(fg, 0).category } catch (e: Exception) { return }
-        val target = when (cat) {
-            ApplicationInfo.CATEGORY_GAME -> Profile.GAMING
-            ApplicationInfo.CATEGORY_VIDEO -> Profile.MEDIA
-            else -> Profiles.base()
-        }
-        if (target != Profiles.current()) {
-            Profiles.apply(this, target, "auto: $fg", if (target == Profile.GAMING) fg else null)
-        }
-    }
-
     private fun housekeeping(ready: Boolean, screenOn: Boolean) {
         val now = System.currentTimeMillis()
         if (ready && !screenOn && Store.bool("autoclean", true) && now - Store.long("lastClean") > 7L * 86_400_000) {
             Actions.trimCaches()
         }
+        Smart.storageRelief()
         val day = now / 86_400_000
+        if (Store.long("defsDay") != day) {
+            val before = Defs.version()
+            Defs.update(this)
+            if (Defs.version() != before) scanAndAlert()
+        }
         if (Store.long("day") == day) return
         Store.putLong("day", day)
+        scanAndAlert()
         if (ready) Shell.bootstrap(this)
         val st = Device.storage()
         val pct = st.first * 100 / st.second
@@ -166,6 +169,15 @@ class MonitorService : Service() {
         if (Device.uptimeDays() >= 7) Notify.alert(this, 23, "Restart recommended",
             "The phone has been on for %.0f days. A restart clears stuck processes.".format(Device.uptimeDays()))
         Updater.check(this)
+    }
+
+    private fun scanAndAlert() {
+        val hits = Scanner.scan(this) + Scanner.downloads(this)
+        val bad = hits.filter { it.level == 2 }
+        if (bad.isNotEmpty()) {
+            Store.log("Scan: malware match in " + bad.joinToString(", ") { it.label })
+            Notify.alert(this, 24, "Malware found", bad.joinToString(", ") { it.label } + ". Open PhoneGuard, Protect.")
+        }
     }
 
     companion object {

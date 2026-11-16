@@ -1,4 +1,5 @@
 <resources>
     <string name="app_name">PhoneGuard</string>
     <string name="tile_clean">Quick clean</string>
+    <string name="check_scam">Check for scam</string>
 </resources>

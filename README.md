@@ -1,5 +1,57 @@
 # PhoneGuard
 
-Personal Android maintenance app: performance profiles, cache cleanup, thermal and charge guard, background app detector, storage health, security check, verified self-update. Privileged actions run through Shizuku. No analytics. The only network use is the https update check.
+Personal Android app that keeps a phone fast and safe. Built for one family, sideloaded, no analytics.
 
-Build: `release.ps1` (add `-Publish` to create the GitHub release phones update from).
+## What it does
+
+**Performance** (needs Shizuku)
+- Smart mode: learns which apps heat the phone and adapts refresh rate, battery saver and game mode to what is on screen.
+- Thermal guard, charge guard, cache cleanup, background-hog detector, storage health, reversible disabling of unused preinstalled apps.
+
+**Protection** (works without Shizuku)
+- Malware scan of installed apps against daily definitions, plus a behaviour check on sideloaded apps. Runs daily and on every install.
+- Web protection through filtering DNS (Quad9).
+- Scam checker for messages and links: on-phone rules, plus an optional second opinion from the family's own model over Tailscale.
+- Spam call blocking through Android's call screening role.
+- Email and password breach check.
+- Security audit of the phone's own defences.
+
+Play Protect stays on as the first layer. PhoneGuard is the second.
+
+## How it updates
+
+| What | How | When |
+|---|---|---|
+| Threat definitions | `.github/workflows/defs.yml` builds them from public feeds and publishes them to the `defs` release | Daily |
+| The app | `.github/workflows/build.yml` builds and signs every push, and publishes a release when `main` carries a new version | On each version bump |
+
+Phones check both daily. An app update installs only if its checksum matches and it is signed with the same key.
+
+To ship a new version: raise `versionCode` and `versionName` in `app/build.gradle.kts` and push to `main`.
+
+## Shared family lists
+
+Edit these files and push. Every phone picks up the change with the next definitions update.
+
+- `data/calls.txt`: spam numbers and prefixes to block.
+- `data/hosts-extra.txt`: extra domains to flag.
+- `data/hosts-allow.txt`: domains that must never be flagged.
+- `data/hashes-extra.txt`: extra malware hashes.
+
+## Repository secrets
+
+- `KEYSTORE_B64`, `KEYSTORE_PASSWORD`: the signing key. Required.
+- `ABUSECH_KEY`: free abuse.ch Auth-Key. Optional. Without it the malware hash list stays empty and the scan relies on behaviour checks.
+
+## Home AI second opinion (optional)
+
+On the PC that runs Ollama:
+
+1. Sign in to Tailscale.
+2. Run `python tools/glm-relay.py` (set it to start at logon).
+3. Run `tailscale serve --bg 8787`.
+4. In PhoneGuard, Scams tab, enter the PC's Tailscale address (`https://<pc-name>.<tailnet>.ts.net`). Each phone needs the Tailscale app signed in to the same account.
+
+## Local build
+
+`release.ps1` builds on Windows with the toolchain under `D:\android-toolchain`. GitHub Actions is the normal path.

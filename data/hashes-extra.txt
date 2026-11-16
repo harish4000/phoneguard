@@ -1,0 +1,1 @@
+# Extra SHA-256 hashes of malicious APK files, one per line.

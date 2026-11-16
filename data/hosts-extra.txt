@@ -1,0 +1,1 @@
+# Extra malicious domains to block in the scam checker, one per line.

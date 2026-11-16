@@ -1,0 +1,3 @@
+# Shared spam-call list for every phone running PhoneGuard.
+# One number or prefix per line, digits only, with country code (example: 18005550100).
+# A line blocks every caller whose number starts with it. Lines starting with # are ignored.

@@ -1,0 +1,70 @@
+name: Build and release
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["data/**", "tools/**", "README.md", ".github/workflows/defs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_B64" || { echo "Signing key secret is missing"; exit 1; }
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/phoneguard.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/phoneguard.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=phoneguard"
+            echo "keyPassword=$KEYSTORE_PASSWORD"
+          } > keystore.properties
+      - name: Build signed APK
+        run: gradle --no-daemon --console=plain assembleRelease
+      - name: Package
+        id: pkg
+        run: |
+          vc=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts)
+          vn=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk dist/phoneguard.apk
+          "$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)" verify dist/phoneguard.apk
+          sha=$(sha256sum dist/phoneguard.apk | cut -d' ' -f1)
+          printf '{"versionCode":%s,"versionName":"%s","url":"https://github.com/%s/releases/download/v%s/phoneguard.apk","sha256":"%s"}' \
+            "$vc" "$vn" "$GITHUB_REPOSITORY" "$vn" "$sha" > dist/update.json
+          echo "vn=$vn" >> "$GITHUB_OUTPUT"
+          cat dist/update.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phoneguard-${{ steps.pkg.outputs.vn }}
+          path: dist/
+      - name: Release when main carries a new version
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.pkg.outputs.vn }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "$tag is already released. Raise versionCode and versionName to publish a new one."
+          else
+            gh release create "$tag" dist/phoneguard.apk dist/update.json --title "$tag" --notes "PhoneGuard ${{ steps.pkg.outputs.vn }}" --latest
+          fi

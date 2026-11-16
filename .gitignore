@@ -1,10 +1,10 @@
-.gradle/
-build/
-app/build/
-local.properties
-keystore.properties
 *.jks
 *.keystore
-build.log
+.gradle/
+app/build/
 build.done
+build.log
+build/
 dist/
+keystore.properties
+local.properties
