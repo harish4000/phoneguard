@@ -99,6 +99,7 @@ class MonitorService : Service() {
         chargeGuard(b)
         val screenOn = getSystemService(PowerManager::class.java).isInteractive
         if (screenOn && !cooling) Smart.tick(this, b)
+        WifiCheck.tick(this)
         if (ready && n % 10 == 0L) Rogue.sample(this, Usage.foreground(this))
         if (n % 20 == 1L) housekeeping(ready, screenOn)
     }
@@ -169,6 +170,7 @@ class MonitorService : Service() {
         if (Device.uptimeDays() >= 7) Notify.alert(this, 23, "Restart recommended",
             "The phone has been on for %.0f days. A restart clears stuck processes.".format(Device.uptimeDays()))
         Updater.check(this)
+        Digest.maybe(this)
     }
 
     private fun scanAndAlert() {
@@ -176,6 +178,7 @@ class MonitorService : Service() {
         val bad = hits.filter { it.level == 2 }
         if (bad.isNotEmpty()) {
             Store.log("Scan: malware match in " + bad.joinToString(", ") { it.label })
+            Store.inc("wkMalware")
             Notify.alert(this, 24, "Malware found", bad.joinToString(", ") { it.label } + ". Open PhoneGuard, Protect.")
         }
     }

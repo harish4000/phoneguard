@@ -15,7 +15,7 @@ import java.util.zip.GZIPInputStream
 /** Daily threat definitions, published by the repo's definitions workflow. Files are sorted, one entry per line. */
 object Defs {
     private val base: String get() = BuildConfig.UPDATE_URL.replace("latest/download/update.json", "download/defs/")
-    private val names = listOf("hosts.txt", "hashes.txt", "calls.txt")
+    private val names = listOf("hosts.txt", "hashes.txt", "calls.txt", "certs.txt", "pkgs.txt")
 
     private fun dir(c: Context): File = File(c.filesDir, "defs").apply { mkdirs() }
     fun file(c: Context, name: String): File = File(dir(c), name)
@@ -106,6 +106,8 @@ object Scanner {
     fun scan(c: Context): List<Hit> {
         val pm = c.packageManager
         val hashes = Defs.file(c, "hashes.txt")
+        val certs = Defs.file(c, "certs.txt")
+        val pkgs = Defs.file(c, "pkgs.txt")
         val cache = HashMap<String, String>()
         Store.str("hc").split(';').forEach {
             val p = it.split('|')
@@ -117,7 +119,9 @@ object Scanner {
         var count = 0
         for (ai in pm.getInstalledApplications(0)) {
             if (ai.flags and ApplicationInfo.FLAG_SYSTEM != 0 || ai.packageName == c.packageName) continue
-            val pi = try { pm.getPackageInfo(ai.packageName, PackageManager.GET_PERMISSIONS) } catch (e: Exception) { continue }
+            val pi = try {
+                pm.getPackageInfo(ai.packageName, PackageManager.GET_PERMISSIONS or PackageManager.GET_SIGNING_CERTIFICATES)
+            } catch (e: Exception) { continue }
             count++
             val label = pm.getApplicationLabel(ai).toString()
             val key = ai.packageName + "|" + pi.lastUpdateTime
@@ -125,6 +129,17 @@ object Scanner {
             if (sha.isNotEmpty()) keep.add("$key|$sha")
             if (Defs.contains(hashes, sha)) {
                 out.add(Hit(ai.packageName, label, 2, "Matches a known malware sample. Uninstall it."))
+                continue
+            }
+            val signers = pi.signingInfo?.apkContentsSigners.orEmpty().map { s ->
+                MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+            }
+            if (signers.any { Defs.contains(certs, it) }) {
+                out.add(Hit(ai.packageName, label, 2, "Signed with a certificate used by known stalkerware, which lets someone else read this phone. Uninstall it."))
+                continue
+            }
+            if (Defs.contains(pkgs, ai.packageName)) {
+                out.add(Hit(ai.packageName, label, 1, "Its package name matches known stalkerware. If you did not install it yourself, uninstall it."))
                 continue
             }
             val src = try { pm.getInstallSourceInfo(ai.packageName).installingPackageName } catch (e: Exception) { null }
@@ -141,6 +156,7 @@ object Scanner {
         Store.put("hc", keep.joinToString(";"))
         Store.putLong("lastScan", System.currentTimeMillis())
         Store.putLong("lastScanN", count.toLong())
+        Store.putLong("lastBad", out.count { it.level == 2 }.toLong())
         return out.sortedByDescending { it.level }
     }
 

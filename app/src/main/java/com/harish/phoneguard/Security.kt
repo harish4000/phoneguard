@@ -30,7 +30,7 @@ object Security {
 
     private fun secureList(c: Context, key: String): List<String> =
         Settings.Secure.getString(c.contentResolver, key).orEmpty().split(':').filter { it.isNotBlank() }
-            .map { label(c.packageManager, it.substringBefore('/')) }.distinct()
+            .map { it.substringBefore('/') }.filter { it != c.packageName }.map { label(c.packageManager, it) }.distinct()
 
     fun scan(c: Context): List<Finding> {
         val out = ArrayList<Finding>()

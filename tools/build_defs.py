@@ -5,6 +5,8 @@ Output files are sorted one-entry-per-line text, gzipped, because the app binary
   hosts.txt   malicious and phishing hostnames
   hashes.txt  SHA-256 of known malicious Android packages
   calls.txt   spam-call numbers and prefixes
+  certs.txt   SHA-1 of signing certificates used by known stalkerware
+  pkgs.txt    package names of known stalkerware
   version.txt date and counts
 """
 import gzip
@@ -21,6 +23,9 @@ REPO = os.environ.get("GITHUB_REPOSITORY", "harish4000/phoneguard")
 UA = {"User-Agent": "phoneguard-defs"}
 HOST_RX = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$")
 HASH_RX = re.compile(r"^[0-9a-f]{64}$")
+CERT_RX = re.compile(r"^[0-9a-f]{40}$")
+PKG_RX = re.compile(r"^[a-z][a-z0-9_]*(\.[a-zA-Z0-9_]+)+$")
+STALKERWARE = "https://raw.githubusercontent.com/AssoEchap/stalkerware-indicators/master/"
 MAX_HOSTS = 600_000
 MAX_HASHES = 500_000
 
@@ -96,8 +101,8 @@ def build_hosts():
     return sorted(hosts)[:MAX_HOSTS]
 
 
-def build_hashes():
-    hashes = set()
+def build_hashes(seed):
+    hashes = set(seed)
     try:  # yesterday's list, so matches accumulate
         prev = gzip.decompress(fetch(f"https://github.com/{REPO}/releases/download/defs/hashes.txt.gz"))
         hashes.update(x for x in prev.decode().split() if HASH_RX.match(x))
@@ -121,6 +126,40 @@ def build_hashes():
     return sorted(hashes)[-MAX_HASHES:] if len(hashes) > MAX_HASHES else sorted(hashes)
 
 
+def build_stalkerware():
+    """Package names, signing certificates and sample hashes from the Echap stalkerware-indicators project (CC BY 4.0)."""
+    pkgs, certs, hashes = set(), set(), set()
+    try:
+        section = None
+        for line in fetch(STALKERWARE + "ioc.yaml").decode("utf-8", "replace").splitlines():
+            m = re.match(r"^\s{2}(\w+):\s*$", line)
+            if m:
+                section = m.group(1)
+                continue
+            if line.startswith("- name"):
+                section = None
+                continue
+            m = re.match(r"^\s+-\s+(\S+)\s*$", line)
+            if not m:
+                continue
+            v = m.group(1).strip("'\"")
+            if section == "packages" and PKG_RX.match(v):
+                pkgs.add(v)
+            elif section == "certificates" and CERT_RX.match(v.lower()):
+                certs.add(v.lower())
+        for row in fetch(STALKERWARE + "samples.csv").decode("utf-8", "replace").splitlines()[1:]:
+            h = row.split(",")[0].strip().lower()
+            if HASH_RX.match(h):
+                hashes.add(h)
+        print(f"stalkerware: {len(pkgs)} packages, {len(certs)} certificates, {len(hashes)} hashes")
+    except Exception as e:
+        print(f"stalkerware: FAILED {e}")
+    for line in lines_of("data/pkgs-extra.txt"):
+        if PKG_RX.match(line):
+            pkgs.add(line)
+    return sorted(pkgs), sorted(certs), hashes
+
+
 def build_calls():
     out = set()
     for line in lines_of("data/calls.txt"):
@@ -138,16 +177,19 @@ def write_gz(name, rows):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    hosts, hashes, calls = build_hosts(), build_hashes(), build_calls()
+    pkgs, certs, sample_hashes = build_stalkerware()
+    hosts, hashes, calls = build_hosts(), build_hashes(sample_hashes), build_calls()
     if len(hosts) < 1000:
         # Refuse to publish a near-empty list over a good one when the feeds are down.
         sys.exit(f"Only {len(hosts)} hosts collected. Feeds look down, keeping yesterday's definitions.")
     write_gz("hosts.txt", hosts)
     write_gz("hashes.txt", hashes)
     write_gz("calls.txt", calls)
+    write_gz("certs.txt", certs)
+    write_gz("pkgs.txt", pkgs)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with open(os.path.join(OUT, "version.txt"), "w") as f:
-        f.write(f"{stamp} hosts={len(hosts)} hashes={len(hashes)} calls={len(calls)}\n")
+        f.write(f"{stamp} hosts={len(hosts)} hashes={len(hashes)} certs={len(certs)} pkgs={len(pkgs)} calls={len(calls)}\n")
     print(open(os.path.join(OUT, "version.txt")).read().strip())
 
 

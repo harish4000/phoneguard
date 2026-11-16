@@ -31,16 +31,32 @@ object Scam {
     )
     private val textRules = listOf(
         Triple("urgent|immediately|right away|within 24 ?h|final notice|last warning|act now|account (?:is |has been )?(?:suspended|locked|restricted|disabled)", 15, "Pressure to act fast"),
-        Triple("gift ?cards?|bitcoin|crypto|usdt|wire transfer|western union|e-?transfer|google play card|itunes card", 20, "Asks for money in a form that is hard to reverse"),
+        Triple("gift ?cards?|bitcoin|crypto|usdt|wire transfer|western union|e-?transfer|google play card|itunes card|send (?:me )?(?:some )?money|lend me", 20, "Asks for money in a form that is hard to reverse"),
         Triple("verification code|one[- ]time (?:code|password|pin)|\\botp\\b|password|\\bpin\\b|\\bsin\\b|social insurance|card number|cvv|banking details", 20, "Asks for a code, password or personal number"),
         Triple("you(?:'ve| have) won|winner|prize|lottery|unclaimed|refund|rebate|compensation|inheritance", 20, "Promises money or a prize"),
         Triple("parcel|package|delivery|shipment|customs|redeliver|tracking", 10, "Delivery notice, a common lure"),
-        Triple("hi (?:mom|mum|dad|grandma|grandpa)|new (?:phone )?number|lost my phone|broke my phone|this is my new", 30, "Claims to be family on a new number"),
+        Triple("(?:pay|settle) (?:the|a|an|your) (?:small )?(?:fee|duty|toll|fine|charge|balance)|unpaid (?:toll|fee|fine|invoice|bill)|outstanding (?:toll|fee|balance)|redelivery fee|customs (?:fee|duty|charge)", 25, "Asks for a small payment to release or settle something"),
+        Triple("hi (?:mom|mum|dad|grandma|grandpa)|new (?:phone )?number|lost my phone|broke my phone|this is my new", 40, "Claims to be family on a new number"),
         Triple("work from home|part[- ]time job|daily pay|easy money|hiring now", 20, "Unsolicited job or easy-money offer"),
         Triple("anydesk|teamviewer|remote access|install (?:this|the) app|screen shar", 30, "Asks you to install remote-access software"),
         Triple("\\bcra\\b|canada revenue|service canada|\\birs\\b|arrest warrant|tax (?:refund|return|owed)", 15, "Invokes a government agency or legal threat"),
-        Triple("do not (?:tell|share)|keep (?:this|it) (?:secret|confidential|between us)", 25, "Asks for secrecy")
+        Triple("do not tell (?:anyone|any ?body|your|the bank)|don't tell (?:anyone|any ?body|your|the bank)|keep (?:this|it) (?:secret|confidential|between us)", 25, "Asks for secrecy")
     ).map { Triple(Regex(it.first, RegexOption.IGNORE_CASE), it.second, it.third) }
+
+    /** Organisation named in the text, with its real sites. A link to anywhere else is the classic impersonation pattern. */
+    private val named = listOf(
+        "canada ?post" to listOf("canadapost-postescanada.ca", "canadapost.ca"),
+        "\\bcra\\b|canada revenue|service canada" to listOf("canada.ca", "gc.ca"),
+        "\\brbc\\b|royal bank" to listOf("rbc.com", "rbcroyalbank.com"),
+        "\\bcibc\\b" to listOf("cibc.com"), "scotiabank" to listOf("scotiabank.com"),
+        "\\btd (?:bank|canada)" to listOf("td.com"), "\\bbmo\\b" to listOf("bmo.com"),
+        "interac" to listOf("interac.ca"), "paypal" to listOf("paypal.com"), "netflix" to listOf("netflix.com"),
+        "amazon" to listOf("amazon.com", "amazon.ca", "a.co"), "\\bapple\\b|icloud" to listOf("apple.com", "icloud.com"),
+        "microsoft" to listOf("microsoft.com", "live.com", "office.com"), "purolator" to listOf("purolator.com"),
+        "fedex" to listOf("fedex.com"), "\\bups\\b" to listOf("ups.com"), "\\bdhl\\b" to listOf("dhl.com"),
+        "rogers" to listOf("rogers.com"), "telus" to listOf("telus.com"), "koodo" to listOf("koodomobile.com"),
+        "\\bfido\\b" to listOf("fido.ca"), "407 ?etr" to listOf("407etr.com")
+    ).map { Regex(it.first, RegexOption.IGNORE_CASE) to it.second }
 
     private fun hostOf(u: String): String {
         var s = u.trim().trimEnd('.', ',', ')', '!', '?')
@@ -61,10 +77,12 @@ object Scam {
         var score = 0
         val why = LinkedHashSet<String>()
         val urls = urlRx.findAll(text).map { it.value }.toList()
+        val roots = HashSet<String>()
         for (u in urls) {
             val h = hostOf(u)
             if (h.isEmpty()) continue
             val root = apex(h)
+            roots.add(root)
             val tld = h.substringAfterLast('.')
             if (Defs.hostListed(c, h)) { score += 60; why.add("$h is on a known phishing or malware list") }
             if (ipRx.matches(h)) { score += 30; why.add("Link uses a raw IP address") }
@@ -77,6 +95,10 @@ object Scam {
             for ((brand, real) in brands) {
                 if (root !in real && tokens.any { it == brand || it.startsWith(brand) }) { score += 35; why.add("Mentions $brand but is not an official $brand site") }
             }
+        }
+        if (roots.isNotEmpty()) {
+            val fake = named.firstOrNull { (rx, real) -> rx.containsMatchIn(text) && roots.none { r -> real.any { r == it || r.endsWith(".$it") } } }
+            if (fake != null) { score += 30; why.add("Names a known organisation but the link goes somewhere else") }
         }
         var textHit = false
         for ((rx, pts, reason) in textRules) {
@@ -132,18 +154,41 @@ object Web {
 }
 
 object Breach {
-    fun email(addr: String): String = try {
+    /** Names of known breaches containing this address. Null when the check itself failed. */
+    fun emailBreaches(addr: String): List<String>? = try {
         val conn = URL("https://api.xposedornot.com/v1/check-email/" + URLEncoder.encode(addr.trim(), "UTF-8")).openConnection() as HttpURLConnection
         conn.connectTimeout = 10_000
         conn.readTimeout = 15_000
-        if (conn.responseCode == 404) "No known breaches for this address."
+        if (conn.responseCode == 404) emptyList()
         else {
             val arr = JSONObject(conn.inputStream.bufferedReader().use { it.readText() }).optJSONArray("breaches")?.optJSONArray(0)
-            val names = (0 until (arr?.length() ?: 0)).map { arr!!.getString(it) }
-            if (names.isEmpty()) "No known breaches for this address."
-            else "Found in ${names.size} breaches: " + names.take(25).joinToString(", ") + (if (names.size > 25) ", and more" else "") + ". Change reused passwords and turn on two-step sign-in."
+            (0 until (arr?.length() ?: 0)).map { arr!!.getString(it) }
         }
-    } catch (e: Exception) { "Check failed: ${e.message}" }
+    } catch (e: Exception) { null }
+
+    fun email(addr: String): String {
+        val names = emailBreaches(addr) ?: return "Check failed. Try again later."
+        return if (names.isEmpty()) "No known breaches for this address."
+        else "Found in ${names.size} breaches: " + names.take(25).joinToString(", ") + (if (names.size > 25) ", and more" else "") + ". Change reused passwords and turn on two-step sign-in."
+    }
+
+    fun watched(): List<String> = Store.str("watchEmails").split('\n', ',', ' ').map { it.trim().lowercase() }.filter { it.contains('@') }.distinct().take(10)
+
+    /** Weekly recheck of saved addresses. Alerts only when a breach appears that was not there last time. */
+    fun watch(c: Context) {
+        watched().forEachIndexed { i, e ->
+            val names = emailBreaches(e) ?: return@forEachIndexed
+            val first = !Store.has("br_$e")
+            val old = Store.str("br_$e").split(',').filter { it.isNotBlank() }.toSet()
+            val fresh = names.filter { it !in old }
+            Store.put("br_$e", names.joinToString(","))
+            if (fresh.isEmpty()) return@forEachIndexed
+            val msg = if (first) "$e appears in ${names.size} known breaches. Change reused passwords and turn on two-step sign-in."
+            else "$e appears in a new breach: " + fresh.take(5).joinToString(", ") + ". Change that password now."
+            Notify.alert(c, 60 + i, if (first) "Breach check" else "New data breach", msg)
+            Store.log("Breach watch: $e, ${fresh.size} new")
+        }
+    }
 
     /** Only the first five characters of the password's hash leave the phone. */
     fun password(pw: String): String = try {

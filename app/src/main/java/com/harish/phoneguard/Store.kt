@@ -20,6 +20,10 @@ object Store {
     fun putLong(k: String, v: Long) = p.edit().putLong(k, v).apply()
     fun bool(k: String, d: Boolean): Boolean = p.getBoolean(k, d)
     fun putBool(k: String, v: Boolean) = p.edit().putBoolean(k, v).apply()
+    fun has(k: String): Boolean = p.contains(k)
+
+    @Synchronized
+    fun inc(k: String) = putLong(k, long(k) + 1)
 
     @Synchronized
     fun log(msg: String) {

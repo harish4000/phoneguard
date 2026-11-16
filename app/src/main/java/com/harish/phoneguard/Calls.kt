@@ -75,10 +75,12 @@ class CallScreen : CallScreeningService() {
                     CallRules.BLOCK -> {
                         b.setDisallowCall(true).setRejectCall(true).setSkipCallLog(false).setSkipNotification(true)
                         Store.log("Blocked call $shown ($why)")
+                        Store.inc("wkCalls")
                     }
                     CallRules.SILENCE -> {
                         b.setSilenceCall(true)
                         Store.log("Silenced call $shown ($why)")
+                        Store.inc("wkCalls")
                     }
                 }
             }

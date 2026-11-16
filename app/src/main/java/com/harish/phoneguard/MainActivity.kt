@@ -176,6 +176,7 @@ private fun Home() {
     val cur = remember(tick) { Profiles.current() }
     val learned by produceState<List<Smart.Learned>>(emptyList(), tick / 10) { value = withContext(Dispatchers.IO) { Smart.learned(c) } }
     val log = remember(tick) { Store.str("log").lines().take(40).joinToString("\n") }
+    val score by produceState<Score.Result?>(null, tick / 10) { value = withContext(Dispatchers.IO) { Score.compute(c) } }
 
     if (!ready) Section("Control is off") {
         Text(
@@ -183,6 +184,12 @@ private fun Home() {
             else "Protection is working. Performance control needs Shizuku: open the Shizuku app and start it. This is needed again after every restart."
         )
         if (alive) Button(onClick = { Shell.request() }) { Text("Grant access") }
+    }
+    score?.let { r ->
+        Section("Protection score: ${r.score} of 100") {
+            if (r.todo.isEmpty()) Small("Everything is in place.")
+            r.todo.forEach { Small("- $it") }
+        }
     }
     Section("Now") {
         Text("Battery ${b.pct}%${if (b.charging) " (charging)" else ""}, ${"%.1f".format(b.tempC)} C")
@@ -269,6 +276,7 @@ private fun Protect() {
             if (!ready) Small("Without Shizuku: Settings, Network and internet, Private DNS, then enter ${Web.DNS}")
         }
         Small("Uses a filtering DNS (Quad9) so known malicious and phishing sites fail to load, in every app and browser.")
+        Toggle("Warn when joining Wi-Fi with no password", "wifiWarn", true)
     }
     Section("Security check") {
         val f = findings
@@ -311,6 +319,8 @@ private fun Scams() {
     var email by remember { mutableStateOf("") }
     var pw by remember { mutableStateOf("") }
     var breach by remember { mutableStateOf("") }
+    var watch by remember { mutableStateOf(Store.str("watchEmails")) }
+    val auto = remember(tick) { ScamWatch.enabled(c) }
 
     Section("Scam checker") {
         OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), minLines = 3,
@@ -334,6 +344,22 @@ private fun Scams() {
         }
         if (ai.isNotEmpty()) { Text("Second opinion"); Small(ai) }
         Small("Tip: in any app, select text or tap Share, then pick Check for scam. For a QR code, scan it with the camera and share the link here before opening it.")
+    }
+    Section("Automatic scam alerts") {
+        Text(if (auto) "On" else "Off")
+        if (!auto) {
+            Button(onClick = {
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { ScamWatch.enable(c) }
+                    if (!ok) try {
+                        c.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) { }
+                }
+            }) { Text("Turn on") }
+            Small("If Android greys out the switch, open this app's App info, tap the three dots, and choose Allow restricted settings first.")
+        }
+        Toggle("Check incoming messages and warn me", "scamAuto", true)
+        Small("Checks message notifications from texts and chat apps with the rules above, on the phone only. Nothing is stored or uploaded. You get an alert only when a message scores as a likely scam.")
     }
     Section("Voice and video fakes") {
         Small("AI can clone a voice from a few seconds of audio. Agree a family code word, and ask for it before acting on any urgent call about money, even when the voice is familiar. Then hang up and call back on the number you have saved.")
@@ -375,6 +401,15 @@ private fun Scams() {
             scope.launch { breach = withContext(Dispatchers.IO) { Breach.password(pw) } }
         }) { Text("Check password") }
         if (breach.isNotEmpty()) Small(breach)
+        OutlinedTextField(value = watch, onValueChange = { watch = it; Store.put("watchEmails", it) }, modifier = Modifier.fillMaxWidth(),
+            minLines = 2, label = { Text("Emails to monitor weekly, one per line") })
+        OutlinedButton(enabled = watch.contains('@'), onClick = {
+            breach = "Checking saved addresses..."
+            scope.launch {
+                withContext(Dispatchers.IO) { Breach.watch(c) }
+                breach = "Saved. You will get a notification now for existing breaches, and later only for new ones."
+            }
+        }) { Text("Save and check now") }
         Small("The email goes to the XposedOrNot breach service. The password never leaves the phone: only the first five characters of its hash are sent.")
     }
     Section("Home AI for second opinions") {

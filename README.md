@@ -9,7 +9,9 @@ Personal Android app that keeps a phone fast and safe. Built for one family, sid
 - Thermal guard, charge guard, cache cleanup, background-hog detector, storage health, reversible disabling of unused preinstalled apps.
 
 **Protection** (works without Shizuku)
-- Malware scan of installed apps against daily definitions, plus a behaviour check on sideloaded apps. Runs daily and on every install.
+- Malware and stalkerware scan of installed apps against daily definitions, plus a behaviour check on sideloaded apps. Runs daily and on every install.
+- Automatic scam alerts on incoming texts and chat messages, checked on the phone only.
+- Protection score, weekly report, weekly breach monitoring, unsafe Wi-Fi warning.
 - Web protection through filtering DNS (Quad9).
 - Scam checker for messages and links: on-phone rules, plus an optional second opinion from the family's own model over Tailscale.
 - Spam call blocking through Android's call screening role.
@@ -37,6 +39,14 @@ Edit these files and push. Every phone picks up the change with the next definit
 - `data/hosts-extra.txt`: extra domains to flag.
 - `data/hosts-allow.txt`: domains that must never be flagged.
 - `data/hashes-extra.txt`: extra malware hashes.
+- `data/pkgs-extra.txt`: extra package names to flag.
+
+## Data sources
+
+- Phishing and malware domains: [Phishing.Database](https://github.com/Phishing-Database/Phishing.Database) and [OpenPhish](https://openphish.com).
+- Stalkerware package names, certificates and hashes: [Echap stalkerware-indicators](https://github.com/AssoEchap/stalkerware-indicators), CC BY 4.0.
+- Malware hashes: [MalwareBazaar](https://bazaar.abuse.ch), when the key is set.
+- Breach data: [XposedOrNot](https://xposedornot.com) and [Pwned Passwords](https://haveibeenpwned.com/Passwords).
 
 ## Repository secrets
 
