@@ -15,7 +15,7 @@ import java.util.zip.GZIPInputStream
 /** Daily threat definitions, published by the repo's definitions workflow. Files are sorted, one entry per line. */
 object Defs {
     private val base: String get() = BuildConfig.UPDATE_URL.replace("latest/download/update.json", "download/defs/")
-    private val names = listOf("hosts.txt", "hashes.txt", "calls.txt", "certs.txt", "pkgs.txt", "bloat.txt")
+    private val names = listOf("hosts.txt", "hashes.txt", "calls.txt", "certs.txt", "pkgs.txt", "bloat.txt", "rules.txt")
 
     private fun dir(c: Context): File = File(c.filesDir, "defs").apply { mkdirs() }
     fun file(c: Context, name: String): File = File(dir(c), name)

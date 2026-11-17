@@ -1,6 +1,8 @@
 *.jks
 *.keystore
+.ai-rules.log
 .gradle/
+__pycache__/
 app/build/
 build.done
 build.log

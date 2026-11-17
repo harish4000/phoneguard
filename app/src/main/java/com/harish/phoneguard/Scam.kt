@@ -104,6 +104,14 @@ object Scam {
         for ((rx, pts, reason) in textRules) {
             if (rx.containsMatchIn(text)) { score += pts; why.add(reason); textHit = true }
         }
+        // Rules written nightly by the family's own model. Each is a small nudge and their total is capped,
+        // so they can sharpen a verdict but never raise an alert without the built-in rules agreeing.
+        var learned = 0
+        for ((rx, pts, reason) in aiRules(c)) {
+            if (learned >= AI_CAP) break
+            if (rx.containsMatchIn(text)) { learned += pts; why.add("$reason (new pattern)"); textHit = true }
+        }
+        score += learned.coerceAtMost(AI_CAP)
         if (textHit && urls.isNotEmpty()) score += 10
         val label = when {
             score >= 60 -> "Likely a scam"
@@ -114,23 +122,68 @@ object Scam {
         return Verdict(score.coerceAtMost(100), label, why.toList())
     }
 
-    /** Second opinion from the family's own model. Empty string when no address is set. */
-    fun ai(text: String): String {
+    private const val AI_CAP = 30
+    private val safePattern = Regex("^[a-z0-9 '|()?-]{6,120}$")
+    private var aiLoaded = -1L
+    private var aiCache: List<Triple<Regex, Int, String>> = emptyList()
+
+    /** Loads rules.txt from the daily definitions: weight, tab, pattern, tab, reason. Only plain phrase patterns are accepted. */
+    @Synchronized
+    private fun aiRules(c: Context): List<Triple<Regex, Int, String>> {
+        val f = Defs.file(c, "rules.txt")
+        if (!f.exists()) return emptyList()
+        if (f.lastModified() == aiLoaded) return aiCache
+        aiCache = try {
+            f.readLines().mapNotNull {
+                val p = it.split('\t')
+                val w = p.getOrNull(0)?.toIntOrNull()
+                if (p.size < 3 || w == null || !safePattern.matches(p[1])) return@mapNotNull null
+                try { Triple(Regex(p[1], RegexOption.IGNORE_CASE), w.coerceIn(5, 15), p[2].take(80)) } catch (e: Exception) { null }
+            }.take(400)
+        } catch (e: Exception) { emptyList() }
+        aiLoaded = f.lastModified()
+        return aiCache
+    }
+
+    fun aiRuleCount(c: Context): Int = aiRules(c).size
+
+    fun aiOn(): Boolean = Store.str("glmUrl").trim().startsWith("https://")
+
+    /** Second opinion on a message from the family's own model. Empty string when no address is set. */
+    fun ai(text: String): String = home("check", JSONObject().put("text", text.take(4000)))
+
+    /** Risk review of one installed app by the family's own model. Only the app's name and permissions are sent. */
+    fun aiApp(c: Context, pkg: String): String {
+        val pm = c.packageManager
+        return try {
+            val pi = pm.getPackageInfo(pkg, android.content.pm.PackageManager.GET_PERMISSIONS)
+            val src = try { pm.getInstallSourceInfo(pkg).installingPackageName } catch (e: Exception) { null }
+            val perms = pi.requestedPermissions.orEmpty().map { it.substringAfterLast('.') }.take(80)
+            home("app", JSONObject()
+                .put("label", pm.getApplicationLabel(pi.applicationInfo!!).toString())
+                .put("package", pkg)
+                .put("installer", src ?: "unknown (sideloaded)")
+                .put("hasIcon", pm.getLaunchIntentForPackage(pkg) != null)
+                .put("permissions", org.json.JSONArray(perms)))
+        } catch (e: Exception) { "Could not read that app." }
+    }
+
+    private fun home(path: String, body: JSONObject): String {
         val base = Store.str("glmUrl").trim().trimEnd('/')
         if (base.isEmpty()) return ""
         if (!base.startsWith("https://")) return "AI address must start with https://"
         return try {
-            val conn = (URL("$base/check").openConnection() as HttpURLConnection).apply {
+            val conn = (URL("$base/$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 8_000
                 readTimeout = 180_000
                 setRequestProperty("Content-Type", "application/json")
             }
-            conn.outputStream.use { it.write(JSONObject().put("text", text.take(4000)).toString().toByteArray()) }
+            conn.outputStream.use { it.write(body.toString().toByteArray()) }
             JSONObject(conn.inputStream.bufferedReader().use { it.readText() }).optString("verdict").ifBlank { "AI gave no answer." }
         } catch (e: Exception) {
-            "AI check unavailable (home PC not reachable). The rule-based result still applies."
+            "Home AI not reachable right now. The on-phone result still applies."
         }
     }
 }

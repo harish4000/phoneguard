@@ -1,0 +1,4 @@
+# Scam patterns written nightly by the family's own AI model on the home PC (tools/ai_rules.py).
+# Columns, separated by tabs: date added, weight (5 to 15), pattern, reason shown to the user.
+# Every pattern passed tools/rulecheck.py and matched none of data/benign-messages.txt.
+# Delete a line to retire a rule. Rules older than 60 days are retired automatically.

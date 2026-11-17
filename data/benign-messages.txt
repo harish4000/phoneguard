@@ -1,0 +1,82 @@
+# Ordinary messages. An AI-written scam pattern is rejected if it matches any line here.
+# Add a line whenever a real, harmless message gets flagged.
+Your verification code is 482913. Do not share this code with anyone.
+Your one-time passcode for online banking is 771204. It expires in 10 minutes.
+INTERAC e-Transfer: Priya sent you $50.00 and it has been automatically deposited.
+You have received an e-Transfer from Dad. The money has been deposited into your account.
+Your package has been delivered. Thank you for shopping with us.
+Your order has shipped and will arrive tomorrow between 9 am and 1 pm.
+Your parcel is out for delivery today. Track it in the app.
+Reminder: your dentist appointment is tomorrow at 2:30 pm. Reply C to confirm.
+Your prescription is ready for pickup at the pharmacy.
+Your bill is ready to view. The amount due is $84.20 and it is due on the 28th.
+Thanks for your payment of $120.00. Your balance is now $0.00.
+Your pre-authorized payment will be withdrawn on the 1st of the month.
+Low balance alert: your chequing account is below $100.
+A new sign-in to your account was detected. If this was you, no action is needed.
+Your password was changed successfully.
+Your subscription renews on December 3. Manage it in your account settings.
+Your ride is arriving in 3 minutes. Look for a grey Toyota.
+Your food order is on its way and will arrive in about 20 minutes.
+Flight AC 123 to Vancouver is on time and boards at gate 42.
+Your table for four is confirmed for Saturday at 7 pm.
+School is closed today because of the snow. Buses are cancelled.
+Karate practice is moved to 6 pm tonight. Please bring your sparring gear.
+Parent-teacher interviews are next Thursday. Book your slot online.
+Can you pick up milk and bread on your way home?
+Running ten minutes late, see you soon.
+Dinner at 7? I will pick up the package on the way.
+Happy birthday! Hope you have a great day.
+Call me when you get a chance, nothing urgent.
+Did you get my email about the weekend plans?
+Can you send me the photos from last night?
+I will transfer you the money for the tickets tonight.
+Thanks for lunch, I owe you one.
+Mom says dinner is ready, come downstairs.
+Hi mom, practice finished early, can you pick me up?
+Hi dad, I got an A on my test.
+I lost my keys again, have you seen them?
+My phone battery is almost dead, I will call you from the office.
+Meeting moved to 3 pm, same room.
+Please review the attached document and send your comments by Friday.
+The invoice for October is attached. Payment terms are 30 days.
+Your interview is scheduled for Monday at 10 am. A calendar invite will follow.
+We are hiring. See open roles on our careers page.
+Your tax return has been received and is being processed.
+Your notice of assessment is now available in your account.
+Property tax instalment reminder: the next payment is due June 30.
+Your vehicle registration expires next month. Renew online or in person.
+Highway toll statement: your monthly statement is now available.
+Your library books are due in three days.
+Your warranty registration is complete.
+Sale ends Sunday: up to 40 percent off winter jackets.
+You earned 500 points on your last purchase.
+Congratulations on your work anniversary.
+Your refund of $32.10 has been processed to your original payment method.
+We have updated our privacy policy.
+Your internet service will be interrupted for maintenance tonight between 1 am and 4 am.
+Your data usage has reached 80 percent of your monthly plan.
+Your mobile bill is ready. Thank you for being a customer.
+Security tip: we will never ask for your password by text or email.
+Your account statement is ready to view online.
+Your credit card payment is due in 5 days.
+A purchase of $64.99 was made with your card ending 1001.
+Your card was declined. Please try another payment method at checkout.
+Your gift card balance is $25.00.
+I bought a gift card for the teacher from all of us.
+Bitcoin dropped again today, did you see the news?
+Do not tell the kids yet, it is a surprise party.
+Keep it secret until her birthday.
+The courier left a notice at the door, we can pick it up at the post office.
+Customs forms are needed for the parcel to India.
+Your application has been approved. Welcome aboard.
+Your claim has been received. A representative will contact you within 5 business days.
+Winner of the school raffle will be announced on Friday.
+The team won the tournament this weekend.
+Please verify the meeting time with the client.
+Click the link in the calendar invite to join the call.
+Your download is ready.
+Update available: a new version of the app is ready to install.
+Your device is running low on storage.
+Good morning! Have a great day at school.
+Love you, see you tonight.

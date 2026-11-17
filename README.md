@@ -41,6 +41,7 @@ Edit these files and push. Every phone picks up the change with the next definit
 - `data/hosts-allow.txt`: domains that must never be flagged.
 - `data/hashes-extra.txt`: extra malware hashes.
 - `data/pkgs-extra.txt`: extra package names to flag.
+- `data/benign-messages.txt`: ordinary messages that no scam pattern may match.
 
 ## Data sources
 
@@ -64,14 +65,14 @@ Protection works as soon as the app is installed. Performance control (profiles,
 
 Either way the permissions survive restarts and updates, so the step is never repeated. Stopping, blocking or disabling another app, and scanning inside `Android/data`, still need Shizuku running.
 
-## Home AI second opinion (optional)
+## Home AI (optional)
 
-On the PC that runs Ollama:
+The family PC runs a local model through Ollama. `tools/setup-home-ai.ps1` sets up both uses of it:
 
-1. Sign in to Tailscale.
-2. Run `python tools/glm-relay.py` (set it to start at logon).
-3. Run `tailscale serve --bg 8787`.
-4. In PhoneGuard, Scams tab, enter the PC's Tailscale address (`https://<pc-name>.<tailnet>.ts.net`). Each phone needs the Tailscale app signed in to the same account.
+- **Nightly rule writer** (`tools/ai_rules.py`, 02:30): the model reads the day's public phishing links and fraud alerts and proposes new scam phrase patterns. A pattern is published only if it passes `tools/rulecheck.py`, matches its own example, and matches none of the ordinary messages in `data/benign-messages.txt`. Accepted patterns go to `data/scam-rules.txt` and ship with the daily definitions. On the phone each AI pattern adds a small score and their total is capped, so they cannot raise an alert without the built-in rules agreeing. If a harmless message is flagged, add it to `data/benign-messages.txt`.
+- **Live second opinion** (`tools/glm-relay.py`): phones ask the model about a suspicious message or app over Tailscale. Enter the PC's Tailscale address in PhoneGuard, Scams tab. Each phone needs the Tailscale app signed in to the same account.
+
+If the PC is off, phones keep working on the built-in rules and the last published patterns.
 
 ## Local build
 

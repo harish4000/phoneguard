@@ -246,6 +246,7 @@ private fun Protect() {
     var procHits by remember { mutableStateOf<List<ProcScan.Hit>?>(null) }
     var procRan by remember { mutableStateOf(false) }
     var armed by remember { mutableStateOf("") }
+    var aiApp by remember { mutableStateOf(mapOf<String, String>()) }
     val filesOk = remember(refresh) { FileScan.allowed() }
     var upd by remember { mutableStateOf("") }
     val ready = remember(refresh) { Ctl.can(c) }
@@ -254,6 +255,7 @@ private fun Protect() {
 
     Section("Antivirus scan") {
         Text("Definitions: ${Defs.version()}")
+        Small("${Scam.aiRuleCount(c)} scam patterns written by the home AI are active")
         Text("Last scan: ${ago(Store.long("lastScan"))}")
         Small("${Store.long("lastScanN")} apps, ${Store.long("lastFileN")} files, ${Store.long("lastProcN")} running processes checked")
         if (!filesOk) {
@@ -298,6 +300,16 @@ private fun Protect() {
                         c.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + x.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     } catch (e: Exception) { }
                 }) { Text("Open app info to uninstall") }
+                if (x.pkg.isNotEmpty() && Scam.aiOn()) {
+                    TextButton(onClick = {
+                        aiApp = aiApp + (x.pkg to "Asking the home AI...")
+                        scope.launch {
+                            val v = withContext(Dispatchers.IO) { Scam.aiApp(c, x.pkg) }
+                            aiApp = aiApp + (x.pkg to v)
+                        }
+                    }) { Text("Ask the home AI about this app") }
+                    aiApp[x.pkg]?.let { Small(it) }
+                }
             }
         }
         fileHits.forEach { x ->

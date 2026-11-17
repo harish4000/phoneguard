@@ -8,6 +8,7 @@ Output files are sorted one-entry-per-line text, gzipped, because the app binary
   certs.txt   SHA-1 of signing certificates used by known stalkerware
   pkgs.txt    package names of known stalkerware
   bloat.txt   preinstalled apps the community rates safe to remove: package, tab, one-line description
+  rules.txt   scam patterns written by the family's own AI model: weight, tab, pattern, tab, reason
   version.txt date and counts
 """
 import gzip
@@ -181,6 +182,27 @@ def build_bloat():
     return sorted(rows)
 
 
+def build_rules():
+    """AI-written scam patterns from data/scam-rules.txt, checked again here so nothing unsafe reaches a phone."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import rulecheck
+    benign = lines_of("data/benign-messages.txt")
+    rows, dropped = [], 0
+    for line in lines_of("data/scam-rules.txt"):
+        p = line.split("\t")
+        if len(p) < 4 or not p[1].isdigit():
+            dropped += 1
+            continue
+        weight = max(rulecheck.MIN_WEIGHT, min(rulecheck.MAX_WEIGHT, int(p[1])))
+        reason = re.sub(r"[^\x20-\x7e]", "", p[3]).strip()[:80]
+        if rulecheck.problem(p[2], benign) or not reason:
+            dropped += 1
+            continue
+        rows.append(f"{weight}\t{p[2]}\t{reason}")
+    print(f"ai scam rules: {len(rows)} active, {dropped} dropped")
+    return sorted(set(rows))[:400]
+
+
 def build_calls():
     out = set()
     for line in lines_of("data/calls.txt"):
@@ -208,6 +230,8 @@ def main():
     write_gz("calls.txt", calls)
     write_gz("certs.txt", certs)
     write_gz("pkgs.txt", pkgs)
+    rules = build_rules()
+    write_gz("rules.txt", rules)
     bloat = build_bloat()
     if bloat:
         write_gz("bloat.txt", bloat)
@@ -218,7 +242,7 @@ def main():
             write_gz("bloat.txt", [])
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with open(os.path.join(OUT, "version.txt"), "w") as f:
-        f.write(f"{stamp} hosts={len(hosts)} hashes={len(hashes)} certs={len(certs)} pkgs={len(pkgs)} calls={len(calls)}\n")
+        f.write(f"{stamp} hosts={len(hosts)} hashes={len(hashes)} certs={len(certs)} pkgs={len(pkgs)} calls={len(calls)} airules={len(rules)}\n")
     print(open(os.path.join(OUT, "version.txt")).read().strip())
 
 
