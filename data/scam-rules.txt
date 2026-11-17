@@ -2,3 +2,11 @@
 # Columns, separated by tabs: date added, weight (5 to 15), pattern, reason shown to the user.
 # Every pattern passed tools/rulecheck.py and matched none of data/benign-messages.txt.
 # Delete a line to retire a rule. Rules older than 60 days are retired automatically.
+2026-11-17	10	verify your account now	urgent request to verify identity
+2026-11-17	10	claim your prize today	offer of unearned reward
+2026-11-17	10	secure your wallet immediately	urgency to protect crypto assets
+2026-11-17	10	update your payment info	request for financial details
+2026-11-17	10	confirm your identity now	demand for personal verification
+2026-11-17	10	your package is on hold	fake delivery delay warning
+2026-11-17	10	recover your lost funds	promise to return stolen money
+2026-11-17	10	verify your roblox account	impersonation of game platform
