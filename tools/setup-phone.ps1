@@ -8,7 +8,8 @@
 #
 # Usage:   .\tools\setup-phone.ps1            (one phone plugged in)
 #          .\tools\setup-phone.ps1 -Serial X  (several phones: pick one from "adb devices")
-param([string]$Serial = "")
+#          .\tools\setup-phone.ps1 -PermissionsOnly  (install and grant only; leave scam alerts, call blocking and DNS alone)
+param([string]$Serial = "", [switch]$PermissionsOnly)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -43,18 +44,22 @@ foreach ($op in "GET_USAGE_STATS", "WRITE_SETTINGS", "MANAGE_EXTERNAL_STORAGE", 
 }
 Sh "dumpsys deviceidle whitelist +$pkg" | Out-Null
 
-Write-Host "3. Turning on scam alerts and spam call blocking..."
-Sh "cmd notification allow_listener $pkg/$pkg.ScamWatch" | Out-Null
-Sh "cmd role add-role-holder android.app.role.CALL_SCREENING $pkg" | Out-Null
-
-Write-Host "4. Web protection..."
-$mode = (Sh "settings get global private_dns_mode").Trim()
-if ($mode -eq "hostname") {
-    Write-Host ("   Private DNS is already set to " + (Sh "settings get global private_dns_specifier").Trim() + ". Left as it is.")
+if ($PermissionsOnly) {
+    Write-Host "3. Skipped scam alerts, call blocking and web protection (-PermissionsOnly)."
 } else {
-    Sh "settings put global private_dns_specifier dns.quad9.net" | Out-Null
-    Sh "settings put global private_dns_mode hostname" | Out-Null
-    Write-Host "   Private DNS set to dns.quad9.net"
+    Write-Host "3. Turning on scam alerts and spam call blocking..."
+    Sh "cmd notification allow_listener $pkg/$pkg.ScamWatch" | Out-Null
+    Sh "cmd role add-role-holder android.app.role.CALL_SCREENING $pkg" | Out-Null
+
+    Write-Host "4. Web protection..."
+    $mode = (Sh "settings get global private_dns_mode").Trim()
+    if ($mode -eq "hostname") {
+        Write-Host ("   Private DNS is already set to " + (Sh "settings get global private_dns_specifier").Trim() + ". Left as it is.")
+    } else {
+        Sh "settings put global private_dns_specifier dns.quad9.net" | Out-Null
+        Sh "settings put global private_dns_mode hostname" | Out-Null
+        Write-Host "   Private DNS set to dns.quad9.net"
+    }
 }
 
 Sh "am start -n $pkg/.MainActivity" | Out-Null
