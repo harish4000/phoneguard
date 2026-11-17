@@ -19,8 +19,8 @@ android {
         applicationId = "com.harish.phoneguard"
         minSdk = 30
         targetSdk = 35
-        versionCode = 5
-        versionName = "2.2"
+        versionCode = 6
+        versionName = "2.2.1"
         buildConfigField("String", "UPDATE_URL", "\"${project.findProperty("updateUrl") ?: ""}\"")
     }
 
