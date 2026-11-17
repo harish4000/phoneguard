@@ -69,7 +69,7 @@ object Smart {
         val fg = Usage.foreground(c) ?: return
         if (fg == c.packageName) return
         learn(fg, b.tempC, b.charging)
-        if (!on() || !Shell.granted()) return
+        if (!on() || !Ctl.can(c)) return
 
         val cat = try { c.packageManager.getApplicationInfo(fg, 0).category } catch (e: Exception) { ApplicationInfo.CATEGORY_UNDEFINED }
         val hot = runsHot(fg)
@@ -84,11 +84,11 @@ object Smart {
         if (target != Profiles.current()) {
             Profiles.apply(c, target, "smart: $why", if (cat == ApplicationInfo.CATEGORY_GAME) fg else null)
         }
-        memoryRelief(c)
+        memoryRelief(c, fg)
     }
 
     /** Frees cached background processes when free memory runs low. Running apps and their notifications are untouched. */
-    private fun memoryRelief(c: Context) {
+    private fun memoryRelief(c: Context, fg: String) {
         val now = System.currentTimeMillis()
         if (now - Store.long("lastMemRelief") < 30 * 60_000) return
         val mi = ActivityManager.MemoryInfo()
@@ -96,17 +96,17 @@ object Smart {
         val pct = mi.availMem * 100 / mi.totalMem.coerceAtLeast(1)
         if (pct >= 12 && !mi.lowMemory) return
         Store.putLong("lastMemRelief", now)
-        Shell.run("am kill-all")
+        Ctl.killCached(c, fg)
         Store.log("Smart: freed cached apps (memory at $pct% free)")
     }
 
     /** Called every ten minutes. Cleans caches when storage gets tight, at most once a day. */
-    fun storageRelief() {
-        if (!on() || !Shell.granted()) return
+    fun storageRelief(c: Context) {
+        if (!on()) return
         val st = Device.storage()
         if (st.first * 100 / st.second >= 15) return
         if (System.currentTimeMillis() - Store.long("lastClean") < 86_400_000) return
         Store.log("Smart: storage under 15%, cleaning caches")
-        Actions.trimCaches()
+        Actions.trimCaches(c)
     }
 }

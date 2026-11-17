@@ -200,18 +200,23 @@ object ProcScan {
     private val rootNames = Regex("(?i)(^|/)(magiskd|ksud|frida-server|frida-helper|daemonsu)(\\s|$)")
     private val badDirs = listOf("/data/local/tmp/", "/sdcard/", "/storage/", "/mnt/")
 
-    /** Null when Shizuku is not running. */
+    /** App processes from Android's activity report, for phones without Shizuku. Native programs are not visible this way. */
+    private fun fromReport(): List<String> =
+        Regex("ProcessRecord\\{[0-9a-f]+ \\d+:([^/\\s}]+)/").findAll(Ctl.dumpsys("activity processes"))
+            .map { "app " + it.groupValues[1] }.distinct().toList()
+
+    /** Null when neither Shizuku nor the one-time setup is available. */
     fun scan(c: Context): List<Hit>? {
-        if (!Shell.granted()) return null
+        if (!Shell.granted() && !Ctl.dump(c)) return null
         val pm = c.packageManager
         val bad = Store.str("badPkgs").split(',').filter { it.isNotBlank() }.toSet()
         val out = ArrayList<Hit>()
         val seen = HashSet<String>()
         var count = 0
         // CMDLINE shows the full command. Some builds lack it, so fall back to the plain process name.
-        var rows = Shell.run("ps -A -o USER,CMDLINE").out.lines().drop(1)
-        if (rows.count { it.trim().contains(' ') } < 20) rows = Shell.run("ps -A -o USER,NAME").out.lines().drop(1)
-        if (rows.size < 20) return null
+        var rows = if (Shell.granted()) Shell.run("ps -A -o USER,CMDLINE").out.lines().drop(1) else fromReport()
+        if (Shell.granted() && rows.count { it.trim().contains(' ') } < 20) rows = Shell.run("ps -A -o USER,NAME").out.lines().drop(1)
+        if (rows.size < 5) return null
         rows.forEach { line ->
             val t = line.trim().split(Regex("\\s+"), 2)
             val cmd = t.getOrNull(1)?.trim().orEmpty()

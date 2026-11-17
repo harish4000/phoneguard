@@ -55,6 +55,15 @@ Edit these files and push. Every phone picks up the change with the next definit
 - `KEYSTORE_B64`, `KEYSTORE_PASSWORD`: the signing key. Required.
 - `ABUSECH_KEY`: free abuse.ch Auth-Key. Optional. Without it the malware hash list stays empty and the scan relies on behaviour checks.
 
+## Setting up a phone
+
+Protection works as soon as the app is installed. Performance control (profiles, smart mode, cool-down, one-tap web protection, process scan, background-hog detector) needs one of these, once:
+
+- **PC and cable:** turn on USB debugging on the phone, plug it in, and run `tools/setup-phone.ps1`. It installs the app, grants the permanent permissions, and turns on scam alerts, call blocking and web protection.
+- **Shizuku:** start it once and tap Grant access in PhoneGuard. The app grants itself the same permanent permissions.
+
+Either way the permissions survive restarts and updates, so the step is never repeated. Stopping, blocking or disabling another app, and scanning inside `Android/data`, still need Shizuku running.
+
 ## Home AI second opinion (optional)
 
 On the PC that runs Ollama:

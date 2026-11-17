@@ -5,11 +5,12 @@ import android.content.pm.ApplicationInfo
 
 /** Cleanup and app control. */
 object Actions {
-    fun trimCaches(): String {
-        if (!Shell.granted()) return "Start Shizuku to clean caches."
-        val before = Device.storage().first
-        Shell.run("pm trim-caches 999999999999")
-        val freed = ((Device.storage().first - before) / 1_000_000).coerceAtLeast(0)
+    fun trimCaches(c: Context): String {
+        val freed = if (Shell.granted()) {
+            val before = Device.storage().first
+            Shell.run("pm trim-caches 999999999999")
+            ((Device.storage().first - before) / 1_000_000).coerceAtLeast(0)
+        } else Ctl.freeCaches(c) / 1_000_000
         Store.putLong("lastClean", System.currentTimeMillis())
         val msg = "Cleared app caches, freed $freed MB"
         Store.log(msg)
@@ -21,13 +22,38 @@ object Actions {
         Store.log("Stopped $pkg")
     }
 
+    /** Without Shizuku: ends the app's background processes. Android may restart them, so the app's settings page is opened too. */
+    fun softStop(c: Context, pkg: String) {
+        try { c.getSystemService(android.app.ActivityManager::class.java).killBackgroundProcesses(pkg) } catch (e: Exception) { }
+        Store.log("Ended background processes of $pkg")
+    }
+
     fun restrictBackground(pkg: String, on: Boolean) {
         Shell.run("cmd appops set $pkg RUN_ANY_IN_BACKGROUND ${if (on) "ignore" else "allow"}")
         Store.log((if (on) "Blocked background for " else "Allowed background for ") + pkg)
     }
 
     /** Largest files in shared storage as size to path. Listed only, never deleted by the app. */
-    fun largeFiles(): List<Pair<Long, String>> =
+    fun largeFiles(): List<Pair<Long, String>>? {
+        if (FileScan.allowed()) {
+            val out = ArrayList<Pair<Long, String>>()
+            val stack = ArrayDeque<java.io.File>()
+            stack.add(android.os.Environment.getExternalStorageDirectory())
+            var seen = 0
+            while (stack.isNotEmpty() && seen < 400_000) {
+                val kids = try { stack.removeLast().listFiles() } catch (e: Exception) { null } ?: continue
+                for (f in kids) {
+                    if (f.isDirectory) stack.add(f)
+                    else { seen++; if (f.length() > 50_000_000) out.add(f.length() to f.path) }
+                }
+            }
+            return out.sortedByDescending { it.first }.take(25)
+        }
+        if (!Shell.granted()) return null
+        return shellLargeFiles()
+    }
+
+    private fun shellLargeFiles(): List<Pair<Long, String>> =
         Shell.run("find /sdcard -type f -size +50M -exec stat -c '%s|%n' {} + 2>/dev/null | sort -t'|' -k1 -rn | head -25")
             .out.lines().mapNotNull {
                 val i = it.indexOf('|')
@@ -64,13 +90,47 @@ object Rogue {
             if (cpu != null && name != null && name.contains('.')) name to cpu else null
         }.sortedByDescending { it.second }
 
+    private var lastCpu: Map<String, Long> = emptyMap()
+    private var lastCpuAt = 0L
+
+    /**
+     * CPU percent per package since the previous call, from Android's battery report.
+     * Used when Shizuku is not running. Needs the DUMP permission from the one-time setup.
+     */
+    private fun fromBatteryReport(c: Context): List<Pair<String, Float>> {
+        if (!Ctl.dump(c)) return emptyList()
+        val uidPkg = HashMap<String, String>()
+        val cpu = HashMap<String, Long>()
+        Ctl.dumpsys("batterystats --checkin").lineSequence().forEach {
+            val f = it.split(',')
+            if (f.size >= 6 && f[2] == "i" && f[3] == "uid") uidPkg.putIfAbsent(f[4], f[5])
+            else if (f.size >= 6 && f[2] == "l" && f[3] == "cpu") {
+                val ms = (f[4].toLongOrNull() ?: 0) + (f[5].toLongOrNull() ?: 0)
+                cpu[f[1]] = (cpu[f[1]] ?: 0) + ms
+            }
+        }
+        val now = android.os.SystemClock.elapsedRealtime()
+        val totals = cpu.mapNotNull { (uid, ms) -> uidPkg[uid]?.let { it to ms } }.toMap()
+        val prev = lastCpu
+        val span = now - lastCpuAt
+        lastCpu = totals
+        lastCpuAt = now
+        if (prev.isEmpty() || span < 60_000) return emptyList()
+        return totals.mapNotNull { (pkg, ms) ->
+            val d = ms - (prev[pkg] ?: return@mapNotNull null)
+            if (d <= 0) null else pkg to d * 100f / span
+        }
+    }
+
     @Synchronized
     fun sample(c: Context, foreground: String?) {
         val m = load()
         val seen = HashMap<String, Float>()
-        top().forEach { (p, v) ->
+        val readings = if (Shell.granted()) top() else fromBatteryReport(c)
+        readings.forEach { (p, v) ->
             if (p != foreground && p != c.packageName && Actions.isUserApp(c, p)) seen[p] = (seen[p] ?: 0f) + v
         }
+        if (readings.isEmpty()) return
         (m.keys + seen.keys).toSet().forEach { p ->
             val old = m[p] ?: (0f to 0)
             m[p] = (old.first + (seen[p] ?: 0f)) to (old.second + 1)

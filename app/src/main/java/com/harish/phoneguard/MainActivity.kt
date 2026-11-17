@@ -108,6 +108,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun appInfo(c: android.content.Context, pkg: String) {
+    try {
+        c.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$pkg")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (e: Exception) { }
+}
+
 private fun gb(b: Long): String = "%.1f GB".format(b / 1e9)
 
 private fun ago(t: Long): String =
@@ -170,7 +176,8 @@ private fun Home() {
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(3000); tick++ } }
     val alive = remember(tick) { Shell.alive() }
-    val ready = remember(tick) { Shell.granted() }
+    val ready = remember(tick) { Ctl.can(c) }
+    val control = remember(tick) { Ctl.label(c) }
     val b = remember(tick) { Device.battery(c) }
     val th = remember(tick) { Device.thermal(c) }
     val st = remember(tick) { Device.storage() }
@@ -181,8 +188,8 @@ private fun Home() {
 
     if (!ready) Section("Control is off") {
         Text(
-            if (alive) "Shizuku is running. Grant access to enable profiles, cleanup and app control."
-            else "Protection is working. Performance control needs Shizuku: open the Shizuku app and start it. This is needed again after every restart."
+            if (alive) "Shizuku is running. Grant access once and this phone keeps performance control for good, even when Shizuku is not running."
+            else "Protection is working. Performance control needs a one-time setup: two minutes on a cable with the family PC. Ask whoever gave you this app."
         )
         if (alive) Button(onClick = { Shell.request() }) { Text("Grant access") }
     }
@@ -197,6 +204,7 @@ private fun Home() {
         Text("Thermal state: ${Device.thermalLabel(th)}")
         Text("Storage free: ${gb(st.first)} of ${gb(st.second)} (${st.first * 100 / st.second}%)")
         Text("Running for ${"%.1f".format(Device.uptimeDays())} days since restart")
+        Text("Performance control: $control")
     }
     Section("Profile: ${cur.label}") {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -220,7 +228,7 @@ private fun Home() {
             learned.forEach { Small("${it.hotShare}%   ${it.label}") }
         }
         OutlinedButton(enabled = ready, onClick = {
-            scope.launch { withContext(Dispatchers.IO) { Profiles.restore() }; tick++ }
+            scope.launch { withContext(Dispatchers.IO) { Profiles.restore(c) }; tick++ }
         }) { Text("Restore original settings") }
     }
     Section("Action log") { Small(log.ifBlank { "Nothing yet." }) }
@@ -240,7 +248,7 @@ private fun Protect() {
     var armed by remember { mutableStateOf("") }
     val filesOk = remember(refresh) { FileScan.allowed() }
     var upd by remember { mutableStateOf("") }
-    val ready = remember(refresh) { Shell.granted() }
+    val ready = remember(refresh) { Ctl.can(c) }
     val dns = remember(refresh) { Web.dnsName(c) }
     val findings by produceState<List<Security.Finding>?>(null, refresh) { value = withContext(Dispatchers.IO) { Security.scan(c) } }
 
@@ -315,7 +323,7 @@ private fun Protect() {
                 color = if (x.level == 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
             Small(x.why)
         }
-        if (procRan && procHits == null) Small("Process scan skipped: it needs Shizuku running.")
+        if (procRan && procHits == null) Small("Process scan skipped: it needs the one-time setup or Shizuku.")
         Small("Checks every installed and preinstalled app, every file in shared storage that can carry code, and every running process. Apps and files are also checked as they arrive. Android does not let any app read other apps' private data or memory, so nothing on Android can scan those.")
     }
     Section("Web protection") {
@@ -323,9 +331,9 @@ private fun Protect() {
         Text(if (on) "On: $dns" else "Off")
         if (!on) {
             Button(enabled = ready, onClick = {
-                scope.launch { withContext(Dispatchers.IO) { Web.enable() }; delay(1500); refresh++ }
+                scope.launch { withContext(Dispatchers.IO) { Web.enable(c) }; delay(1500); refresh++ }
             }) { Text("Turn on") }
-            if (!ready) Small("Without Shizuku: Settings, Network and internet, Private DNS, then enter ${Web.DNS}")
+            if (!ready) Small("By hand: Settings, Network and internet, Private DNS, then enter ${Web.DNS}")
         }
         Small("Uses a filtering DNS (Quad9) so known malicious and phishing sites fail to load, in every app and browser.")
         Toggle("Warn when joining Wi-Fi with no password", "wifiWarn", true)
@@ -487,13 +495,14 @@ private fun Scams() {
 
 @Composable
 private fun Clean() {
+    val c = LocalContext.current
     val scope = rememberCoroutineScope()
     var msg by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var refresh by remember { mutableIntStateOf(0) }
     val st = remember(refresh) { Device.storage() }
     val files by produceState<List<Pair<Long, String>>?>(null, refresh) {
-        value = withContext(Dispatchers.IO) { if (Shell.granted()) Actions.largeFiles() else null }
+        value = withContext(Dispatchers.IO) { Actions.largeFiles() }
     }
 
     Section("Storage") {
@@ -503,7 +512,7 @@ private fun Clean() {
         Button(enabled = !busy, onClick = {
             busy = true
             scope.launch {
-                msg = withContext(Dispatchers.IO) { Actions.trimCaches() }
+                msg = withContext(Dispatchers.IO) { Actions.trimCaches(c) }
                 busy = false
                 refresh++
             }
@@ -515,9 +524,9 @@ private fun Clean() {
     Section("Largest files") {
         val f = files
         when {
-            f == null -> Small("Start Shizuku to list large files.")
+            f == null -> Small("Allow file scanning on the Protect tab to list large files.")
             f.isEmpty() -> Small("No files over 50 MB.")
-            else -> f.forEach { (size, path) -> Small("${size / 1_000_000} MB   ${path.removePrefix("/sdcard/")}") }
+            else -> f.forEach { (size, path) -> Small("${size / 1_000_000} MB   ${path.removePrefix("/sdcard/").removePrefix("/storage/emulated/0/")}") }
         }
         Small("Listed only. Delete them yourself in the Files app.")
     }
@@ -540,9 +549,14 @@ private fun Apps() {
             Text(r.label)
             Small("Average ${"%.1f".format(r.avg)}% CPU while off screen, ${r.samples} samples")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(enabled = ready, onClick = { act { Actions.forceStop(r.pkg) } }) { Text("Stop now") }
-                TextButton(enabled = ready, onClick = { act { Actions.restrictBackground(r.pkg, true) } }) { Text("Block background") }
-                TextButton(enabled = ready, onClick = { act { Actions.restrictBackground(r.pkg, false) } }) { Text("Unblock") }
+                if (ready) {
+                    TextButton(onClick = { act { Actions.forceStop(r.pkg) } }) { Text("Stop now") }
+                    TextButton(onClick = { act { Actions.restrictBackground(r.pkg, true) } }) { Text("Block background") }
+                    TextButton(onClick = { act { Actions.restrictBackground(r.pkg, false) } }) { Text("Unblock") }
+                } else {
+                    TextButton(onClick = { act { Actions.softStop(c, r.pkg) } }) { Text("End background work") }
+                    TextButton(onClick = { appInfo(c, r.pkg) }) { Text("Open app settings") }
+                }
             }
         }
         Small("Stopping or blocking an app can delay its notifications, so these stay manual.")
@@ -550,14 +564,20 @@ private fun Apps() {
     Section("Unused preinstalled apps") {
         val bl = bloat
         when {
-            bl == null -> Small("Start Shizuku once so the app can read usage history.")
+            bl == null -> {
+                Small("PhoneGuard needs usage access to know which apps you never open.")
+                TextButton(onClick = {
+                    try { c.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (e: Exception) { }
+                }) { Text("Allow usage access") }
+            }
             bl.isEmpty() -> Small("Nothing to suggest.")
             else -> {
                 Small("Preinstalled apps you have not opened in 30 days, limited to ones the community debloat list rates safe to remove. Disabling is reversible below.")
                 bl.forEach { r ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(r.label, Modifier.weight(1f))
-                        TextButton(enabled = ready, onClick = { act { Bloat.disable(r.pkg) } }) { Text("Disable") }
+                        if (ready) TextButton(onClick = { act { Bloat.disable(r.pkg) } }) { Text("Disable") }
+                        else TextButton(onClick = { appInfo(c, r.pkg) }) { Text("Open to disable") }
                     }
                     if (r.note.isNotEmpty()) Small(r.note)
                 }

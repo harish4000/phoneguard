@@ -26,21 +26,23 @@ object Profiles {
     fun current(): Profile = read("profile")
     fun base(): Profile = read("base")
 
-    private fun snapshot() {
+    private fun snapshot(c: Context) {
         if (Store.str("snap").isNotEmpty()) return
-        Store.put("snap", keys.joinToString(";") { "$it=" + Shell.run("settings get $it").out.trim() })
+        Store.put("snap", keys.joinToString(";") { "$it=" + (Ctl.get(c, it.substringBefore(' '), it.substringAfter(' ')) ?: "null") })
     }
 
-    private fun restoreCmds(): List<String> =
-        Store.str("snap").split(';').filter { it.contains('=') }.map {
+    private fun restoreAll(c: Context) {
+        Store.str("snap").split(';').filter { it.contains('=') }.forEach {
             val k = it.substringBefore('=')
             val v = it.substringAfter('=')
-            if (v.isEmpty() || v == "null") "settings delete $k" else "settings put $k $v"
-        } + "cmd power set-mode 0"
+            Ctl.put(c, k.substringBefore(' '), k.substringAfter(' '), if (v.isEmpty() || v == "null") null else v)
+        }
+        Ctl.saver(c, false)
+    }
 
-    fun restore(): Boolean {
-        if (!Shell.granted()) return false
-        if (Store.str("snap").isNotEmpty()) Shell.run(restoreCmds().joinToString("; "))
+    fun restore(c: Context): Boolean {
+        if (!Ctl.can(c)) return false
+        if (Store.str("snap").isNotEmpty()) restoreAll(c)
         Store.put("profile", Profile.BALANCED.name)
         Store.put("base", Profile.BALANCED.name)
         Store.log("Restored original settings")
@@ -48,29 +50,27 @@ object Profiles {
     }
 
     fun apply(c: Context, p: Profile, why: String, pkg: String? = null): Boolean {
-        if (!Shell.granted()) return false
-        snapshot()
-        val cmds = ArrayList<String>()
+        if (!Ctl.can(c)) return false
+        snapshot(c)
         if (p == Profile.BALANCED) {
-            cmds.addAll(restoreCmds())
+            restoreAll(c)
         } else {
-            cmds.add("cmd power set-mode ${if (p.saver) 1 else 0}")
+            Ctl.saver(c, p.saver)
             when (p.hz) {
                 Hz.MAX -> {
-                    val m = Device.maxHz(c)
-                    cmds.add("settings put system peak_refresh_rate $m")
-                    cmds.add("settings put system min_refresh_rate $m")
+                    val m = Device.maxHz(c).toString()
+                    Ctl.put(c, "system", "peak_refresh_rate", m)
+                    Ctl.put(c, "system", "min_refresh_rate", m)
                 }
                 Hz.LOW -> {
-                    cmds.add("settings put system peak_refresh_rate 60.0")
-                    cmds.add("settings delete system min_refresh_rate")
+                    Ctl.put(c, "system", "peak_refresh_rate", "60.0")
+                    Ctl.put(c, "system", "min_refresh_rate", null)
                 }
                 Hz.DEFAULT -> { }
             }
-            anims.forEach { cmds.add("settings put global $it ${p.anim}") }
+            anims.forEach { Ctl.put(c, "global", it, p.anim) }
         }
-        if (pkg != null) cmds.add("cmd game mode ${p.game} $pkg")
-        Shell.run(cmds.joinToString("; "))
+        if (pkg != null && Shell.granted()) Shell.run("cmd game mode ${p.game} $pkg")
         Store.put("profile", p.name)
         Store.log("Profile ${p.label} ($why)")
         return true

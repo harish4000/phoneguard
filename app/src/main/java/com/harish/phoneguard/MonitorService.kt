@@ -55,6 +55,7 @@ class MonitorService : Service() {
     private var prevBright = -1
     private var chargeAlerted = false
     private var hotChargeAlerted = false
+    private var prevScreen = -1 to -1
     private var watch: android.os.FileObserver? = null
 
     /** Scans as soon as an app is installed or updated. Runs on the monitor thread. */
@@ -95,13 +96,13 @@ class MonitorService : Service() {
         val th = Device.thermal(this)
         val ready = Shell.granted()
         Notify.update(this, "%.0f C, %s, %s%s".format(b.tempC, Device.thermalLabel(th), Profiles.current().label,
-            if (ready) "" else ". Control off: start Shizuku"))
+            if (Ctl.can(this)) "" else ". Performance control off"))
         thermalGuard(b, th)
         chargeGuard(b)
         val screenOn = getSystemService(PowerManager::class.java).isInteractive
         if (screenOn && !cooling) Smart.tick(this, b)
         WifiCheck.tick(this)
-        if (ready && n % 10 == 0L) Rogue.sample(this, Usage.foreground(this))
+        if ((ready || Ctl.dump(this)) && n % 10 == 0L) Rogue.sample(this, Usage.foreground(this))
         if (n % 20 == 1L) housekeeping(ready, screenOn)
     }
 
@@ -112,10 +113,10 @@ class MonitorService : Service() {
             cooling = true
             prevBright = try { Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) } catch (e: Exception) { -1 }
             val ok = Profiles.apply(this, Profile.COOLDOWN, "heat %.0f C".format(b.tempC))
-            if (ok) Shell.run("cmd display set-brightness 0.35")
+            if (ok) prevScreen = Ctl.dim(this)
             Notify.alert(this, 10, "Phone is running hot",
                 if (ok) "Cool-down applied: 60 Hz, dimmer screen, battery saver. It lifts by itself once the phone cools."
-                else "Close heavy apps and unplug the charger. Start Shizuku for automatic cool-down.")
+                else "Close heavy apps and unplug the charger.")
         }
         if (cooling && !stoppedHotApp && Shell.granted() && (b.tempC >= 46f || th >= PowerManager.THERMAL_STATUS_SEVERE)) {
             val fg = Usage.foreground(this)
@@ -129,8 +130,8 @@ class MonitorService : Service() {
         if (cooling && cool) {
             cooling = false
             stoppedHotApp = false
-            if (Shell.granted()) {
-                if (prevBright >= 0) Shell.run("settings put system screen_brightness $prevBright")
+            if (Ctl.can(this)) {
+                Ctl.undim(this, prevScreen)
                 Profiles.apply(this, Profiles.base(), "cooled down")
             }
         }
@@ -150,10 +151,10 @@ class MonitorService : Service() {
 
     private fun housekeeping(ready: Boolean, screenOn: Boolean) {
         val now = System.currentTimeMillis()
-        if (ready && !screenOn && Store.bool("autoclean", true) && now - Store.long("lastClean") > 7L * 86_400_000) {
-            Actions.trimCaches()
+        if (!screenOn && Store.bool("autoclean", true) && now - Store.long("lastClean") > 7L * 86_400_000) {
+            Actions.trimCaches(this)
         }
-        Smart.storageRelief()
+        Smart.storageRelief(this)
         if (!screenOn && Store.bool("autoUpdate", true)) Updater.install(this)
         ensureWatch()
         try { Powers.check(this) } catch (e: Throwable) { }
@@ -239,6 +240,6 @@ class BootReceiver : BroadcastReceiver() {
 class CleanTile : TileService() {
     override fun onClick() {
         Store.init(this)
-        Thread { Notify.alert(this, 40, "Quick clean", Actions.trimCaches()) }.start()
+        Thread { Notify.alert(this, 40, "Quick clean", Actions.trimCaches(this)) }.start()
     }
 }

@@ -145,11 +145,11 @@ object Web {
         return if (lp.isPrivateDnsActive) lp.privateDnsServerName ?: "automatic" else null
     }
 
-    fun enable(): Boolean {
-        if (!Shell.granted()) return false
-        Shell.run("settings put global private_dns_specifier $DNS; settings put global private_dns_mode hostname")
-        Store.log("Web protection on ($DNS)")
-        return true
+    fun enable(c: Context): Boolean {
+        if (!Ctl.can(c)) return false
+        val ok = Ctl.put(c, "global", "private_dns_specifier", DNS) && Ctl.put(c, "global", "private_dns_mode", "hostname")
+        if (ok) Store.log("Web protection on ($DNS)")
+        return ok
     }
 }
 
