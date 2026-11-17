@@ -10,3 +10,12 @@
 2026-11-17	10	your package is on hold	fake delivery delay warning
 2026-11-17	10	recover your lost funds	promise to return stolen money
 2026-11-17	10	verify your roblox account	impersonation of game platform
+2026-11-17	10	usps delivery update link	Impersonating postal service with fake tracking
+2026-11-17	10	phantom wallet recovery phrase	Stealing crypto wallet credentials via fake support
+2026-11-17	10	shopee black friday exclusive	Using holiday sales to lure victims into phishing
+2026-11-17	10	apple store account verification	Impersonating Apple to steal personal data
+2026-11-17	10	canadian anti-fraud centre report	Impersonating government agency to induce panic
+2026-11-17	10	sp25ct11 promotion code	Using specific campaign codes for targeted phishing
+2026-11-17	10	(claim|get) (your )?(exclusive|early|special) (discount|deal|offer)	fake limited time offer
+2026-11-17	10	(lost|missing) (fund|money|balance) (belonging to|in)	fake lost money lure
+2026-11-17	10	(protect|secure) (your )?(info|data|details)	security pretext for scam
