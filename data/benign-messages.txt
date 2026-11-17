@@ -80,3 +80,7 @@ Update available: a new version of the app is ready to install.
 Your device is running low on storage.
 Good morning! Have a great day at school.
 Love you, see you tonight.
+Please update your payment information to keep your subscription active.
+Your payment method has expired. Update your payment info in your account settings.
+Your package is on hold at the depot and ready for pickup with photo ID.
+Your package is on hold until the customs office reopens on Monday.
