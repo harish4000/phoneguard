@@ -23,6 +23,7 @@ object FileScan {
     private const val APK = 1
     private const val DEX = 2
     private const val ELF = 3
+    private const val PE = 4  // Windows program: harmless to the phone, but phones carry them to PCs
     private const val MAX_HASH_BYTES = 300L * 1024 * 1024
     private val apkExt = setOf("apk", "apks", "xapk", "apkm")
 
@@ -36,25 +37,13 @@ object FileScan {
         return true
     }
 
-    private fun sha256(f: File): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        f.inputStream().use { i ->
-            val buf = ByteArray(65536)
-            while (true) {
-                val n = i.read(buf)
-                if (n < 0) break
-                md.update(buf, 0, n)
-            }
-        }
-        return md.digest().joinToString("") { "%02x".format(it) }
-    }
-
     /** Decides by content, not by file name, so a renamed installer is still caught. */
     private fun kind(f: File): Int {
         val head = ByteArray(4)
         val n = try { f.inputStream().use { it.read(head) } } catch (e: Exception) { return NONE }
         if (n < 4) return NONE
         if (head[0] == 0x7f.toByte() && head[1] == 'E'.code.toByte() && head[2] == 'L'.code.toByte() && head[3] == 'F'.code.toByte()) return ELF
+        if (head[0] == 'M'.code.toByte() && head[1] == 'Z'.code.toByte() && f.extension.lowercase() in setOf("exe", "dll", "scr", "msi", "com")) return PE
         if (head[0] == 'd'.code.toByte() && head[1] == 'e'.code.toByte() && head[2] == 'x'.code.toByte() && head[3] == '\n'.code.toByte()) return DEX
         if (head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte() && head[2] == 3.toByte() && head[3] == 4.toByte()) {
             if (f.extension.lowercase() in apkExt) return APK
@@ -74,19 +63,23 @@ object FileScan {
         val key = f.path + "|" + f.length() + "|" + f.lastModified()
         if (clean.contains(key)) return null
         if (f.length() <= MAX_HASH_BYTES) {
-            val sha = try { sha256(f) } catch (e: Exception) { "" }
-            if (Defs.contains(Defs.file(c, "hashes.txt"), sha)) return Hit(f.path, 2, "Matches a known malware sample.")
+            val hs = Hashes.of(f)
+            val hashes = Defs.file(c, "hashes.txt")
+            if (hs.any { Defs.contains(hashes, it) }) return Hit(f.path, 2, "Matches a known malware sample.")
+            if (k == APK || k == PE) {
+                Cloud.describe(Cloud.verdict(hs[0]))?.let { return Hit(f.path, it.first, it.second) }
+                Cloud.enqueue(c, listOf(Cloud.Item(hs[0], f.name, "", f.path, true)))
+            }
         }
+        if (k == PE) { clean.add(key); return null }
         val ext = f.extension.lowercase()
         if (k == APK) {
             val pi = try { c.packageManager.getPackageArchiveInfo(f.path, PackageManager.GET_SIGNING_CERTIFICATES) } catch (e: Exception) { null }
-            val signers = pi?.signingInfo?.apkContentsSigners.orEmpty().map { s ->
-                MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
-            }
+            val signers = pi?.signingInfo?.apkContentsSigners.orEmpty().flatMap { Hashes.ofBytes(it.toByteArray()) }
             if (signers.any { Defs.contains(Defs.file(c, "certs.txt"), it) })
-                return Hit(f.path, 2, "App installer signed with a certificate used by known stalkerware.")
+                return Hit(f.path, 2, "App installer signed with a certificate used by known spyware or stalkerware.")
             if (pi != null && Defs.contains(Defs.file(c, "pkgs.txt"), pi.packageName))
-                return Hit(f.path, 1, "App installer whose package name matches known stalkerware.")
+                return Hit(f.path, 1, "App installer whose package name matches known spyware or stalkerware.")
             if (ext !in apkExt && ext != "zip" && ext != "jar")
                 return Hit(f.path, 1, "App installer disguised as a .$ext file. Do not open it unless you know where it came from.")
         } else if (!f.path.contains("/Android/")) {

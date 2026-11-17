@@ -31,6 +31,7 @@ object Defs {
         return try {
             val ver = open(base + "version.txt").inputStream.bufferedReader().use { it.readText() }.trim()
             Store.putLong("defsDay", System.currentTimeMillis() / 86_400_000)
+            Store.putLong("defsAt", System.currentTimeMillis())
             if (ver == Store.str("defsVer") && names.all { file(c, it).exists() }) return "Definitions are current ($ver)."
             var failed = 0
             for (n in names) {
@@ -102,19 +103,6 @@ object Defs {
 object Scanner {
     data class Hit(val pkg: String, val label: String, val level: Int, val why: String)
 
-    private fun sha256(f: File): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        f.inputStream().use { i ->
-            val buf = ByteArray(65536)
-            while (true) {
-                val n = i.read(buf)
-                if (n < 0) break
-                md.update(buf, 0, n)
-            }
-        }
-        return md.digest().joinToString("") { "%02x".format(it) }
-    }
-
     @Synchronized
     fun scan(c: Context): List<Hit> {
         val pm = c.packageManager
@@ -127,7 +115,8 @@ object Scanner {
             if (p.size == 3) cache[p[0] + "|" + p[1]] = p[2]
         }
         val keep = ArrayList<String>()
-        val acc = Settings.Secure.getString(c.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        val powers = Spy.powers(c)
+        val cloud = ArrayList<Cloud.Item>()
         val out = ArrayList<Hit>()
         var count = 0
         for (ai in pm.getInstalledApplications(0)) {
@@ -140,40 +129,54 @@ object Scanner {
             count++
             val label = pm.getApplicationLabel(ai).toString()
             val key = ai.packageName + "|" + pi.lastUpdateTime
-            val sha = cache[key] ?: try { sha256(File(ai.sourceDir)) } catch (e: Exception) { "" }
-            if (sha.isNotEmpty()) keep.add("$key|$sha")
-            if (Defs.contains(hashes, sha)) {
+            // SHA-256, SHA-1 and MD5, because threat feeds publish any of the three.
+            val triple = cache[key]?.takeIf { it.count { ch -> ch == ':' } == 2 } ?: Hashes.of(File(ai.sourceDir)).joinToString(":")
+            if (triple.length > 2) keep.add("$key|$triple")
+            val hs = triple.split(':')
+            if (hs.any { Defs.contains(hashes, it) }) {
                 out.add(Hit(ai.packageName, label, 2, "Matches a known malware sample. Uninstall it."))
                 continue
             }
-            val signers = pi.signingInfo?.apkContentsSigners.orEmpty().map { s ->
-                MessageDigest.getInstance("SHA-1").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
-            }
+            val signers = pi.signingInfo?.apkContentsSigners.orEmpty().flatMap { Hashes.ofBytes(it.toByteArray()) }
             if (signers.any { Defs.contains(certs, it) }) {
-                out.add(Hit(ai.packageName, label, 2, "Signed with a certificate used by known stalkerware, which lets someone else read this phone. Uninstall it."))
+                out.add(Hit(ai.packageName, label, 2, "Signed with a certificate used by known spyware or stalkerware, which lets someone else read this phone. Uninstall it."))
                 continue
             }
             if (system) continue
-            if (Defs.contains(pkgs, ai.packageName)) {
-                out.add(Hit(ai.packageName, label, 1, "Its package name matches known stalkerware. If you did not install it yourself, uninstall it."))
+            val src = try { pm.getInstallSourceInfo(ai.packageName).installingPackageName } catch (e: Exception) { null }
+            val sideloaded = src != "com.android.vending"
+            cloud.add(Cloud.Item(hs[0], label, ai.packageName, "", sideloaded))
+            val seen = Cloud.describe(Cloud.verdict(hs[0]))
+            if (seen != null) {
+                out.add(Hit(ai.packageName, label, seen.first, seen.second))
                 continue
             }
-            val src = try { pm.getInstallSourceInfo(ai.packageName).installingPackageName } catch (e: Exception) { null }
-            if (src == "com.android.vending" || ai.packageName == "moe.shizuku.privileged.api") continue
+            if (Defs.contains(pkgs, ai.packageName)) {
+                out.add(Hit(ai.packageName, label, 1, "Its package name matches known spyware or stalkerware. If you did not install it yourself, uninstall it."))
+                continue
+            }
+            if (ai.packageName == "moe.shizuku.privileged.api") continue
+            val spy = Spy.judge(pm, ai, pi, label, src, powers)
+            if (spy != null) {
+                out.add(spy)
+                continue
+            }
+            if (!sideloaded) continue
             val req = pi.requestedPermissions?.toSet().orEmpty()
-            val powers = ArrayList<String>()
-            if ("android.permission.READ_SMS" in req || "android.permission.RECEIVE_SMS" in req) powers.add("reads your texts")
-            if ("android.permission.SYSTEM_ALERT_WINDOW" in req) powers.add("draws over other apps")
-            if ("android.permission.REQUEST_INSTALL_PACKAGES" in req) powers.add("installs other apps")
-            if ("android.permission.READ_CALL_LOG" in req) powers.add("reads your call log")
-            if (acc.contains(ai.packageName + "/")) powers.add("controls the screen")
-            if (powers.size >= 2) out.add(Hit(ai.packageName, label, 1, "Installed outside the Play Store and it " + powers.joinToString(", ") + "."))
+            val risky = ArrayList<String>()
+            if ("android.permission.READ_SMS" in req || "android.permission.RECEIVE_SMS" in req) risky.add("reads your texts")
+            if ("android.permission.SYSTEM_ALERT_WINDOW" in req) risky.add("draws over other apps")
+            if ("android.permission.REQUEST_INSTALL_PACKAGES" in req) risky.add("installs other apps")
+            if ("android.permission.READ_CALL_LOG" in req) risky.add("reads your call log")
+            if (ai.packageName in powers.acc) risky.add("controls the screen")
+            if (risky.size >= 2) out.add(Hit(ai.packageName, label, 1, "Installed outside the Play Store and it " + risky.joinToString(", ") + "."))
         }
         Store.put("hc", keep.joinToString(";"))
         Store.putLong("lastScan", System.currentTimeMillis())
         Store.putLong("lastScanN", count.toLong())
         Store.putLong("lastBad", out.count { it.level == 2 }.toLong())
         Store.put("badPkgs", out.filter { it.level == 2 }.joinToString(",") { it.pkg })
+        Cloud.enqueue(c, cloud)
         return out.sortedByDescending { it.level }
     }
 

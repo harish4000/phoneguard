@@ -25,10 +25,10 @@ Play Protect stays on as the first layer. PhoneGuard is the second.
 
 | What | How | When |
 |---|---|---|
-| Threat definitions | `.github/workflows/defs.yml` builds them from public feeds and publishes them to the `defs` release | Daily |
+| Threat definitions | `.github/workflows/defs.yml` builds them from public feeds and publishes them to the `defs` release | Every 6 hours |
 | The app | `.github/workflows/build.yml` builds and signs every push, and publishes a release when `main` carries a new version. Phones install it by themselves while the screen is off | On each version bump |
 
-Phones check both daily. An app update installs only if its checksum matches and it is signed with the same key.
+Phones check definitions every six hours and the app daily. New app versions install at once on a phone marked as the test phone and two days later everywhere else. An app update installs only if its checksum matches and it is signed with the same key.
 
 To ship a new version: raise `versionCode` and `versionName` in `app/build.gradle.kts` and push to `main`.
 
@@ -48,7 +48,9 @@ Edit these files and push. Every phone picks up the change with the next definit
 - Phishing and malware domains: [Phishing.Database](https://github.com/Phishing-Database/Phishing.Database) and [OpenPhish](https://openphish.com).
 - Stalkerware package names, certificates and hashes: [Echap stalkerware-indicators](https://github.com/AssoEchap/stalkerware-indicators), CC BY 4.0.
 - Safe-to-disable preinstalled apps: [Universal Android Debloater](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation) list, GPL-3.0, entries rated Recommended.
-- Malware hashes: [MalwareBazaar](https://bazaar.abuse.ch), when the key is set.
+- Malware hashes (SHA-256, SHA-1, MD5): indicator repositories from [ESET](https://github.com/eset/malware-ioc), [Doctor Web](https://github.com/DoctorWebLtd/malware-iocs), [Cisco Talos](https://github.com/Cisco-Talos/IOCs) and [Amnesty](https://github.com/AmnestyTech/investigations), Android entries from [ClamAV](https://www.clamav.net), and [MalwareBazaar](https://bazaar.abuse.ch) when the key is set.
+- Mercenary spyware (Pegasus, Predator and others): the [MVT indicator index](https://github.com/mvt-project/mvt-indicators).
+- Cloud verdicts: [VirusTotal](https://www.virustotal.com), with a key entered on each phone. Only file hashes are sent.
 - Breach data: [XposedOrNot](https://xposedornot.com) and [Pwned Passwords](https://haveibeenpwned.com/Passwords).
 
 ## Repository secrets
@@ -71,6 +73,10 @@ The family PC runs a local model through Ollama. `tools/setup-home-ai.ps1` sets 
 
 - **Nightly rule writer** (`tools/ai_rules.py`, 02:30): the model reads the day's public phishing links and fraud alerts and proposes new scam phrase patterns. A pattern is published only if it passes `tools/rulecheck.py`, matches its own example, and matches none of the ordinary messages in `data/benign-messages.txt`. Accepted patterns go to `data/scam-rules.txt` and ship with the daily definitions. On the phone each AI pattern adds a small score and their total is capped, so they cannot raise an alert without the built-in rules agreeing. If a harmless message is flagged, add it to `data/benign-messages.txt`.
 - **Live second opinion** (`tools/glm-relay.py`): phones ask the model about a suspicious message or app over Tailscale. Enter the PC's Tailscale address in PhoneGuard, Scams tab. Each phone needs the Tailscale app signed in to the same account.
+
+Each night the writer also runs a rewording test: the model rewrites the day's scams to dodge the existing rules, and any that get through are used to write broader patterns. The log line `rewording test: X of N caught before repair, Y after` in `.ai-rules.log` tracks how well the rules resist rewording.
+
+On the phone, every message is also checked with its disguise removed (look-alike letters, invisible characters, spelled-out words, digits standing in for letters), and a borderline incoming message can optionally be sent to the home AI for a verdict by meaning.
 
 If the PC is off, phones keep working on the built-in rules and the last published patterns.
 

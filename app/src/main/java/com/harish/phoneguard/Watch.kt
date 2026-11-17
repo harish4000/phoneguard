@@ -43,7 +43,18 @@ class ScamWatch : NotificationListenerService() {
     private fun check(pkg: String, text: String) {
         try {
             val v = Scam.rules(this, text)
-            if (v.score < ALERT_AT) return
+            if (v.score < ALERT_AT) {
+                // Optional: a borderline message goes to the family's own model, which reads meaning rather than wording.
+                if (v.score < 30 || !Store.bool("aiAuto", false) || !Scam.aiOn() || !aiBudget()) return
+                val opinion = Scam.ai(text)
+                if (!aiSaysScam.containsMatchIn(opinion)) return
+                val app = try { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { "a message" }
+                val open = Intent(this, MainActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+                Notify.alert(this, 5000 + (text.hashCode() and 0x3ff), "Possible scam in $app", "The home AI read it as a scam: " + opinion.take(220), open)
+                Store.inc("wkScams")
+                Store.log("Scam alert on a message in $app (home AI)")
+                return
+            }
             val app = try { packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { "a message" }
             val open = Intent(this, MainActivity::class.java).setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
             Notify.alert(this, 5000 + (text.hashCode() and 0x3ff), "Possible scam in $app",
@@ -63,7 +74,16 @@ class ScamWatch : NotificationListenerService() {
         return body?.toString()?.trim().orEmpty()
     }
 
+    private val aiCalls = ArrayList<Long>()
+
+    private fun aiBudget(): Boolean = synchronized(aiCalls) {
+        val now = System.currentTimeMillis()
+        aiCalls.removeAll { now - it > 3_600_000 }
+        if (aiCalls.size >= 12) false else aiCalls.add(now)
+    }
+
     companion object {
+        private val aiSaysScam = Regex("(?i)^\\W*(verdict\\W*)?(likely (a )?)?scam")
         const val ALERT_AT = 60
         private val messengers = setOf(
             "com.google.android.apps.messaging", "com.samsung.android.messaging", "com.android.mms", "com.whatsapp",
@@ -94,6 +114,9 @@ object Score {
 
         if (Store.long("lastBad") + Store.long("lastBadFiles") + Store.long("lastBadProcs") > 0) lose(40, "Remove the malware found by the last scan (Protect tab)")
         if (!FileScan.allowed()) lose(5, "Allow file scanning (Protect tab)")
+        if (!Cloud.on()) lose(5, "Add a VirusTotal key for cloud malware checks (Protect tab)")
+        if (!c.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName))
+            lose(5, "Allow PhoneGuard to run in the background (Protect tab, Security check)")
         Security.scan(c).filter { it.level == 2 }.forEach { lose(20, it.title) }
         val dns = Web.dnsName(c)
         if (dns == null || dns == "automatic") lose(10, "Turn on web protection (Protect tab)")

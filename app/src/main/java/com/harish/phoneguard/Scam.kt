@@ -73,9 +73,47 @@ object Scam {
         return if (last2 in sld) p.takeLast(3).joinToString(".") else last2
     }
 
+    // Look-alike letters from other alphabets that scammers swap in so a word reads the same but no longer matches.
+    private val lookalike = mapOf(
+        '\u0430' to 'a', '\u0435' to 'e', '\u043e' to 'o', '\u0440' to 'p', '\u0441' to 'c', '\u0445' to 'x', '\u0443' to 'y',
+        '\u0456' to 'i', '\u0455' to 's', '\u0458' to 'j', '\u04bb' to 'h', '\u0501' to 'd', '\u051b' to 'q', '\u051d' to 'w',
+        '\u03bf' to 'o', '\u03b1' to 'a', '\u03c1' to 'p', '\u03b5' to 'e', '\u03bd' to 'v', '\u03c4' to 't', '\u03b9' to 'i',
+        '\u03ba' to 'k', '\u0391' to 'a', '\u0392' to 'b', '\u0395' to 'e', '\u0397' to 'h', '\u039f' to 'o', '\u03a1' to 'p',
+        '\u0410' to 'a', '\u0412' to 'b', '\u0415' to 'e', '\u041a' to 'k', '\u041c' to 'm', '\u041d' to 'h', '\u041e' to 'o',
+        '\u0420' to 'p', '\u0421' to 'c', '\u0422' to 't', '\u0425' to 'x'
+    )
+    private val leet = mapOf('0' to 'o', '1' to 'i', '3' to 'e', '4' to 'a', '5' to 's', '7' to 't', '8' to 'b', '@' to 'a', '$' to 's', '!' to 'i')
+    private val invisible = Regex("[\\p{Mn}\\u200B-\\u200F\\u2060\\uFEFF\\u00AD]")
+    private val spelled = Regex("\\b(?:[a-z][ .\\-_*]){3,}[a-z]\\b")
+    private val mixedWord = Regex("[a-z0-9@$!]{3,}")
+
+    /**
+     * Undoes the tricks used to slip past wording filters: look-alike letters, invisible characters, accents,
+     * letters spelled out with dots or spaces, and digits or symbols standing in for letters.
+     */
+    fun normalize(t: String): String {
+        var s = java.text.Normalizer.normalize(t, java.text.Normalizer.Form.NFKD).replace(invisible, "")
+        s = String(CharArray(s.length) { lookalike[s[it]] ?: s[it] }).lowercase()
+        s = spelled.replace(s) { m -> m.value.filter { it.isLetter() } }
+        s = mixedWord.replace(s) { m ->
+            val w = m.value
+            if (w.count { it.isLetter() } >= 2 && w.any { it in leet }) String(CharArray(w.length) { leet[w[it]] ?: w[it] }) else w
+        }
+        return s
+    }
+
     fun rules(c: Context, text: String): Verdict {
         var score = 0
         val why = LinkedHashSet<String>()
+        val plain = normalize(text)
+        val norm = if (plain == text.lowercase()) null else plain
+        var disguised = false
+        // A rule counts if it matches the text as written, or the text with its disguise removed.
+        fun hit(rx: Regex): Boolean {
+            if (rx.containsMatchIn(text)) return true
+            if (norm != null && rx.containsMatchIn(norm)) { disguised = true; return true }
+            return false
+        }
         val urls = urlRx.findAll(text).map { it.value }.toList()
         val roots = HashSet<String>()
         for (u in urls) {
@@ -97,21 +135,22 @@ object Scam {
             }
         }
         if (roots.isNotEmpty()) {
-            val fake = named.firstOrNull { (rx, real) -> rx.containsMatchIn(text) && roots.none { r -> real.any { r == it || r.endsWith(".$it") } } }
+            val fake = named.firstOrNull { (rx, real) -> hit(rx) && roots.none { r -> real.any { r == it || r.endsWith(".$it") } } }
             if (fake != null) { score += 30; why.add("Names a known organisation but the link goes somewhere else") }
         }
         var textHit = false
         for ((rx, pts, reason) in textRules) {
-            if (rx.containsMatchIn(text)) { score += pts; why.add(reason); textHit = true }
+            if (hit(rx)) { score += pts; why.add(reason); textHit = true }
         }
         // Rules written nightly by the family's own model. Each is a small nudge and their total is capped,
         // so they can sharpen a verdict but never raise an alert without the built-in rules agreeing.
         var learned = 0
         for ((rx, pts, reason) in aiRules(c)) {
             if (learned >= AI_CAP) break
-            if (rx.containsMatchIn(text)) { learned += pts; why.add("$reason (new pattern)"); textHit = true }
+            if (hit(rx)) { learned += pts; why.add("$reason (new pattern)"); textHit = true }
         }
         score += learned.coerceAtMost(AI_CAP)
+        if (disguised) { score += 15; why.add("Wording is disguised with symbols, spacing or look-alike letters") }
         if (textHit && urls.isNotEmpty()) score += 10
         val label = when {
             score >= 60 -> "Likely a scam"

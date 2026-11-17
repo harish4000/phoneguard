@@ -3,10 +3,10 @@
 
 Output files are sorted one-entry-per-line text, gzipped, because the app binary-searches them on the phone:
   hosts.txt   malicious and phishing hostnames
-  hashes.txt  SHA-256 of known malicious Android packages
+  hashes.txt  SHA-256, SHA-1 and MD5 of known malicious files
   calls.txt   spam-call numbers and prefixes
-  certs.txt   SHA-1 of signing certificates used by known stalkerware
-  pkgs.txt    package names of known stalkerware
+  certs.txt   SHA-1 or SHA-256 of signing certificates used by known stalkerware and spyware
+  pkgs.txt    package names of known stalkerware and spyware
   bloat.txt   preinstalled apps the community rates safe to remove: package, tab, one-line description
   rules.txt   scam patterns written by the family's own AI model: weight, tab, pattern, tab, reason
   version.txt date and counts
@@ -24,8 +24,14 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else "out"
 REPO = os.environ.get("GITHUB_REPOSITORY", "harish4000/phoneguard")
 UA = {"User-Agent": "phoneguard-defs"}
 HOST_RX = re.compile(r"^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$")
-HASH_RX = re.compile(r"^[0-9a-f]{64}$")
-CERT_RX = re.compile(r"^[0-9a-f]{40}$")
+HASH_RX = re.compile(r"^(?:[0-9a-f]{64}|[0-9a-f]{40}|[0-9a-f]{32})$")  # SHA-256, SHA-1 or MD5
+CERT_RX = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+HEX_IN_TEXT = re.compile(rb"(?<![0-9a-fA-F])([0-9a-fA-F]{64}|[0-9a-fA-F]{40}|[0-9a-fA-F]{32})(?![0-9a-fA-F])")
+# Hashes of empty input, which appear in reports but identify nothing.
+EMPTY = {"d41d8cd98f00b204e9800998ecf8427e", "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+IOC_DIR = os.environ.get("IOC_DIR", "ioc")      # shallow clones of vendor indicator repositories
+CLAM_DIR = os.environ.get("CLAM_DIR", "clam")    # ClamAV databases fetched by cvdupdate
 PKG_RX = re.compile(r"^[a-z][a-z0-9_]*(\.[a-zA-Z0-9_]+)+$")
 STALKERWARE = "https://raw.githubusercontent.com/AssoEchap/stalkerware-indicators/master/"
 MAX_HOSTS = 600_000
@@ -74,9 +80,9 @@ def shielded(h, allow):
     return any(".".join(parts[i:]) in allow for i in range(len(parts) - 1))
 
 
-def build_hosts():
+def build_hosts(extra=()):
     allow = NEVER | {x.lower() for x in lines_of("data/hosts-allow.txt")}
-    hosts = set()
+    hosts = {h for h in extra if not shielded(h, allow)}
     sources = [
         ("phishing-database", "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt", False),
         ("openphish", "https://openphish.com/feed.txt", True),
@@ -107,7 +113,7 @@ def build_hashes(seed):
     hashes = set(seed)
     try:  # yesterday's list, so matches accumulate
         prev = gzip.decompress(fetch(f"https://github.com/{REPO}/releases/download/defs/hashes.txt.gz"))
-        hashes.update(x for x in prev.decode().split() if HASH_RX.match(x))
+        hashes.update(x for x in prev.decode().split() if real_hash(x))
         print(f"previous hashes: {len(hashes)}")
     except Exception as e:
         print(f"previous hashes: none ({e})")
@@ -125,6 +131,7 @@ def build_hashes(seed):
     else:
         print("malwarebazaar: skipped, ABUSECH_KEY secret not set")
     hashes.update(x.lower() for x in lines_of("data/hashes-extra.txt") if HASH_RX.match(x.lower()))
+    hashes -= {x.lower() for x in lines_of("data/hashes-allow.txt")}
     return sorted(hashes)[-MAX_HASHES:] if len(hashes) > MAX_HASHES else sorted(hashes)
 
 
@@ -203,6 +210,113 @@ def build_rules():
     return sorted(set(rows))[:400]
 
 
+def real_hash(h):
+    return HASH_RX.match(h) and h not in EMPTY and not h.isdigit() and len(set(h)) > 6
+
+
+def build_vendor_hashes():
+    """File hashes published by security vendors alongside their research (ESET, Doctor Web, Cisco Talos, Amnesty, MVT).
+
+    The repositories are cloned by the workflow. Their content is untrusted: it is only scanned for hash-shaped text.
+    """
+    found = set()
+    if not os.path.isdir(IOC_DIR):
+        print("vendor indicators: none fetched")
+        return found
+    for repo in sorted(os.listdir(IOC_DIR)):
+        before = len(found)
+        for dp, dn, fn in os.walk(os.path.join(IOC_DIR, repo)):
+            dn[:] = [d for d in dn if d != ".git"]
+            for name in fn:
+                path = os.path.join(dp, name)
+                try:
+                    if os.path.islink(path) or os.path.getsize(path) > 8_000_000:
+                        continue
+                    with open(path, "rb") as f:
+                        blob = f.read()
+                except OSError:
+                    continue
+                for h in HEX_IN_TEXT.findall(blob):
+                    h = h.decode().lower()
+                    if real_hash(h):
+                        found.add(h)
+        print(f"vendor indicators: {repo}: {len(found) - before} hashes")
+    return found
+
+
+def build_clamav_hashes():
+    """Android entries from ClamAV's main and daily databases (hash signatures only)."""
+    import io
+    import tarfile
+    found = set()
+    for name in ("main.cvd", "daily.cvd", "main.cld", "daily.cld"):
+        path = os.path.join(CLAM_DIR, name)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                raw = f.read()
+            if name.endswith(".cvd"):
+                raw = raw[512:]
+            with tarfile.open(fileobj=io.BytesIO(raw), mode="r:*") as t:
+                for m in t.getmembers():
+                    if not m.name.endswith((".hdb", ".hsb")):
+                        continue
+                    for line in t.extractfile(m):
+                        p = line.decode("latin1").strip().split(":")
+                        if len(p) >= 3 and p[2].startswith(("Andr.", "Android.")) and real_hash(p[0].lower()):
+                            found.add(p[0].lower())
+        except Exception as e:
+            print(f"clamav: {name} FAILED {e}")
+    print(f"clamav: {len(found)} android hashes")
+    return found
+
+
+STIX_RX = re.compile(r"\[(domain-name:value|file:hashes\.[a-z0-9-]+|app:id|app:cert\.sha256|app:cert\.sha1)\s*=\s*'([^']+)'\]")
+
+
+def build_spyware_stix():
+    """Mercenary and state spyware indicators (Pegasus, Predator and others) from the MVT project index and Amnesty."""
+    domains, hashes, pkgs, certs = set(), set(), set(), set()
+    texts = []
+    for dp, dn, fn in os.walk(IOC_DIR) if os.path.isdir(IOC_DIR) else []:
+        dn[:] = [d for d in dn if d != ".git"]
+        for name in fn:
+            if name.endswith(".stix2"):
+                try:
+                    texts.append(open(os.path.join(dp, name), encoding="utf-8", errors="replace").read())
+                except OSError:
+                    pass
+    # The MVT index also points at indicator files kept in other repositories.
+    try:
+        idx = fetch("https://raw.githubusercontent.com/mvt-project/mvt-indicators/main/indicators.yaml").decode("utf-8", "replace")
+        for block in idx.split("github:")[1:]:
+            f = dict(re.findall(r"^\s+(owner|repo|branch|path):\s*(\S+)\s*$", block, re.M)[:4])
+            if len(f) == 4 and re.match(r"^[\w.-]+$", f["owner"]) and re.match(r"^[\w.-]+$", f["repo"]):
+                try:
+                    texts.append(fetch(f"https://raw.githubusercontent.com/{f['owner']}/{f['repo']}/{f['branch']}/{f['path']}", timeout=60).decode("utf-8", "replace"))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"spyware index: FAILED {e}")
+    for text in texts:
+        for kind, value in STIX_RX.findall(text):
+            v = value.strip()
+            if kind == "domain-name:value":
+                h = clean_host(v)
+                if h:
+                    domains.add(h)
+            elif kind.startswith("file:hashes"):
+                if real_hash(v.lower()):
+                    hashes.add(v.lower())
+            elif kind == "app:id" and PKG_RX.match(v):
+                pkgs.add(v)
+            elif kind.startswith("app:cert") and CERT_RX.match(v.lower()):
+                certs.add(v.lower())
+    print(f"spyware indicators: {len(domains)} domains, {len(hashes)} hashes, {len(pkgs)} packages, {len(certs)} certificates")
+    return domains, hashes, pkgs, certs
+
+
 def build_calls():
     out = set()
     for line in lines_of("data/calls.txt"):
@@ -221,7 +335,11 @@ def write_gz(name, rows):
 def main():
     os.makedirs(OUT, exist_ok=True)
     pkgs, certs, sample_hashes = build_stalkerware()
-    hosts, hashes, calls = build_hosts(), build_hashes(sample_hashes), build_calls()
+    spy_domains, spy_hashes, spy_pkgs, spy_certs = build_spyware_stix()
+    pkgs = sorted(set(pkgs) | spy_pkgs)
+    certs = sorted(set(certs) | spy_certs)
+    seed = set(sample_hashes) | spy_hashes | build_vendor_hashes() | build_clamav_hashes()
+    hosts, hashes, calls = build_hosts(spy_domains), build_hashes(seed), build_calls()
     if len(hosts) < 1000:
         # Refuse to publish a near-empty list over a good one when the feeds are down.
         sys.exit(f"Only {len(hosts)} hosts collected. Feeds look down, keeping yesterday's definitions.")

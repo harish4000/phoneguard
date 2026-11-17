@@ -92,6 +92,7 @@ class MonitorService : Service() {
 
     private fun tick() {
         n++
+        Store.putLong("beat", System.currentTimeMillis())
         val b = Device.battery(this)
         val th = Device.thermal(this)
         val ready = Shell.granted()
@@ -159,7 +160,7 @@ class MonitorService : Service() {
         ensureWatch()
         try { Powers.check(this) } catch (e: Throwable) { }
         val day = now / 86_400_000
-        if (Store.long("defsDay") != day) {
+        if (now - Store.long("defsAt") > 6 * 3_600_000L) {
             val before = Defs.version()
             Defs.update(this)
             if (Defs.version() != before) scanAndAlert()

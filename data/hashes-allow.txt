@@ -1,0 +1,1 @@
+# File hashes that must never be flagged, one per line. Use this to fix a false positive.

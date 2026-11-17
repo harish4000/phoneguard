@@ -52,11 +52,13 @@ object Security {
             else -> Finding(0, "Security patches", "Patch level ${Build.VERSION.SECURITY_PATCH}.")
         })
 
-        if (Shell.granted()) {
-            val v = Shell.run("settings get global package_verifier_user_consent").out.trim()
-            out.add(if (v == "-1") Finding(2, "Play Protect is off", "Turn on app scanning in Play Store, Play Protect, Settings.")
+        val verifier = Ctl.get(c, "global", "package_verifier_user_consent")
+        if (verifier != null) out.add(
+            if (verifier.trim() == "-1") Finding(2, "Play Protect is off", "Turn on app scanning in Play Store, Play Protect, Settings.")
             else Finding(0, "Play Protect", "App scanning is on."))
-        }
+
+        if (!c.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(c.packageName))
+            out.add(Finding(1, "Android may stop PhoneGuard in the background", "Allow it to run in the background so protection is not paused.", Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
 
         val side = pm.getInstalledApplications(0).filter {
             it.flags and ApplicationInfo.FLAG_SYSTEM == 0 && it.packageName != c.packageName && it.packageName != "moe.shizuku.privileged.api"
@@ -139,9 +141,11 @@ object Updater {
                 f.delete(); Store.log("Update rejected: signature mismatch"); return "Update rejected: signature mismatch."
             }
             Store.putLong("updPending", j.getInt("versionCode").toLong())
+            Store.putLong("updPublished", j.optLong("published", 0))
             Store.put("updName", j.optString("versionName"))
             Store.log("Update ${j.optString("versionName")} downloaded and verified")
-            if (Store.bool("autoUpdate", true)) return "Update ${j.optString("versionName")} verified. It installs by itself when the screen is off."
+            if (Store.bool("autoUpdate", true)) return "Update ${j.optString("versionName")} verified. " +
+                (if (ripe()) "It installs by itself when the screen is off." else "It installs by itself two days after release, once it has proven itself on the test phone.")
             Notify.alert(c, 30, "PhoneGuard update ready", "Tap to install version ${j.optString("versionName")}.", viewIntent(c, f))
             "Update verified. Tap the notification to install."
         } catch (e: Exception) {
@@ -160,11 +164,20 @@ object Updater {
     fun pending(c: Context): Boolean = Store.long("updPending") > BuildConfig.VERSION_CODE && apk(c).exists()
 
     /**
+     * Staged rollout. A phone with "Get updates early" on installs at once and acts as the test phone.
+     * Every other phone waits two days, so a bad release can be replaced before it reaches the family.
+     */
+    fun ripe(): Boolean {
+        val published = Store.long("updPublished")
+        return Store.bool("earlyUpdates", false) || published == 0L || System.currentTimeMillis() / 1000 - published >= 48 * 3600
+    }
+
+    /**
      * Installs a verified, pending update without a tap. Android allows an app to update itself silently once
      * it holds the install permission. If Android still wants a confirmation, UpdateReceiver turns that into a notification.
      */
-    fun install(c: Context): Boolean {
-        if (!pending(c)) return false
+    fun install(c: Context, manual: Boolean = false): Boolean {
+        if (!pending(c) || (!manual && !ripe())) return false
         val f = apk(c)
         if (!sameSigner(c, f)) { f.delete(); return false }
         return try {

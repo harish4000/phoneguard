@@ -17,14 +17,16 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "21"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
         with:
           gradle-version: "8.9"
+      - name: Scam rules must not fire on ordinary messages
+        run: python3 tools/check_rules.py
       - name: Signing key
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
@@ -52,11 +54,11 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk dist/phoneguard.apk
           "$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -1)" verify dist/phoneguard.apk
           sha=$(sha256sum dist/phoneguard.apk | cut -d' ' -f1)
-          printf '{"versionCode":%s,"versionName":"%s","url":"https://github.com/%s/releases/download/v%s/phoneguard.apk","sha256":"%s"}' \
-            "$vc" "$vn" "$GITHUB_REPOSITORY" "$vn" "$sha" > dist/update.json
+          printf '{"versionCode":%s,"versionName":"%s","url":"https://github.com/%s/releases/download/v%s/phoneguard.apk","sha256":"%s","published":%s}' \
+            "$vc" "$vn" "$GITHUB_REPOSITORY" "$vn" "$sha" "$(date +%s)" > dist/update.json
           echo "vn=$vn" >> "$GITHUB_OUTPUT"
           cat dist/update.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: phoneguard-${{ steps.pkg.outputs.vn }}
           path: dist/

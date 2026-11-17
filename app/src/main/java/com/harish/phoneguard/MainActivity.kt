@@ -186,6 +186,11 @@ private fun Home() {
     val log = remember(tick) { Store.str("log").lines().take(40).joinToString("\n") }
     val score by produceState<Score.Result?>(null, tick / 10) { value = withContext(Dispatchers.IO) { Score.compute(c) } }
 
+    val stalled = remember { System.currentTimeMillis() - Store.long("beat") > 5 * 60_000 && Store.long("beat") > 0 }
+    if (stalled) Section("Protection was paused") {
+        Text("Android stopped PhoneGuard in the background. It is running again now.")
+        Small("To stop this happening: Protect tab, Security check, allow PhoneGuard to run in the background.")
+    }
     if (!ready) Section("Control is off") {
         Text(
             if (alive) "Shizuku is running. Grant access once and this phone keeps performance control for good, even when Shizuku is not running."
@@ -247,6 +252,7 @@ private fun Protect() {
     var procRan by remember { mutableStateOf(false) }
     var armed by remember { mutableStateOf("") }
     var aiApp by remember { mutableStateOf(mapOf<String, String>()) }
+    var vt by remember { mutableStateOf(Store.str("vtKey")) }
     val filesOk = remember(refresh) { FileScan.allowed() }
     var upd by remember { mutableStateOf("") }
     val ready = remember(refresh) { Ctl.can(c) }
@@ -256,6 +262,7 @@ private fun Protect() {
     Section("Antivirus scan") {
         Text("Definitions: ${Defs.version()}")
         Small("${Scam.aiRuleCount(c)} scam patterns written by the home AI are active")
+        Small(if (Cloud.on()) "Cloud check: on, ${Cloud.usedToday()} lookups today. ${Cloud.status()}" else "Cloud check: off (add a VirusTotal key below)")
         Text("Last scan: ${ago(Store.long("lastScan"))}")
         Small("${Store.long("lastScanN")} apps, ${Store.long("lastFileN")} files, ${Store.long("lastProcN")} running processes checked")
         if (!filesOk) {
@@ -338,6 +345,26 @@ private fun Protect() {
         if (procRan && procHits == null) Small("Process scan skipped: it needs the one-time setup or Shizuku.")
         Small("Checks every installed and preinstalled app, every file in shared storage that can carry code, and every running process. Apps and files are also checked as they arrive. Android does not let any app read other apps' private data or memory, so nothing on Android can scan those.")
     }
+    Section("Cloud check (VirusTotal)") {
+        OutlinedTextField(value = vt, onValueChange = { vt = it; Store.put("vtKey", it.trim()) }, modifier = Modifier.fillMaxWidth(),
+            singleLine = true, visualTransformation = PasswordVisualTransformation(), label = { Text("VirusTotal API key") })
+        Toggle("Check apps and installers against VirusTotal", "vtOn", true)
+        OutlinedButton(onClick = {
+            try {
+                GmsBarcodeScanning.getClient(c).startScan().addOnSuccessListener { code ->
+                    val u = try { Uri.parse(code.rawValue.orEmpty()) } catch (e: Exception) { null }
+                    if (u != null && u.scheme == "phoneguard" && u.host == "setup") {
+                        u.getQueryParameter("vt")?.let { vt = it; Store.put("vtKey", it.trim()) }
+                        u.getQueryParameter("ai")?.let { Store.put("glmUrl", it.trim()) }
+                        if (u.getQueryParameter("early") == "1") Store.putBool("earlyUpdates", true)
+                        status = "Setup code applied."
+                        refresh++
+                    } else status = "That is not a PhoneGuard setup code."
+                }
+            } catch (e: Exception) { status = "QR scanner is not available on this phone." }
+        }) { Text("Scan a setup code") }
+        Small("VirusTotal combines about seventy antivirus engines and is updated continuously, so it knows malware that is hours old. Only a file's fingerprint is sent, never the file. Lookups run in the background, four a minute, and results are remembered.")
+    }
     Section("Web protection") {
         val on = dns != null && dns != "automatic"
         Text(if (on) "On: $dns" else "Off")
@@ -371,13 +398,14 @@ private fun Protect() {
                 upd = withContext(Dispatchers.IO) { Updater.check(c) }
                 if (Updater.pending(c)) {
                     upd = "Installing version ${Store.str("updName")}. The app will close and reopen."
-                    withContext(Dispatchers.IO) { Updater.install(c) }
+                    withContext(Dispatchers.IO) { Updater.install(c, manual = true) }
                 }
             }
         }) { Text("Check for update") }
         if (upd.isNotEmpty()) Small(upd)
         Toggle("Install updates automatically", "autoUpdate", true)
-        Small("Checked daily and installed while the screen is off. An update installs only if its checksum matches and it is signed with the same key as this app. The first automatic install may ask you to confirm once.")
+        Toggle("Get updates early (this is the test phone)", "earlyUpdates", false)
+        Small("Checked daily and installed while the screen is off. An update installs only if its checksum matches and it is signed with the same key as this app. Phones wait two days after a release unless they are the test phone, so a faulty update can be replaced before it spreads.")
     }
 }
 
@@ -502,6 +530,8 @@ private fun Scams() {
         OutlinedTextField(value = glm, onValueChange = { glm = it; Store.put("glmUrl", it.trim()) }, modifier = Modifier.fillMaxWidth(),
             singleLine = true, label = { Text("Address, https://...ts.net") })
         Small("Optional. Sends the checked text to the family's own model over Tailscale, never to an outside AI. Leave empty to use on-phone rules only.")
+        Toggle("Also ask the home AI about borderline incoming messages", "aiAuto", false)
+        Small("Off by default. When on, an incoming message that looks suspicious but not certain is sent to the family PC for a verdict, so reworded scams are caught by meaning. Clear scams and ordinary messages never leave the phone.")
     }
 }
 
