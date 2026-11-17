@@ -15,7 +15,7 @@ import java.util.zip.GZIPInputStream
 /** Daily threat definitions, published by the repo's definitions workflow. Files are sorted, one entry per line. */
 object Defs {
     private val base: String get() = BuildConfig.UPDATE_URL.replace("latest/download/update.json", "download/defs/")
-    private val names = listOf("hosts.txt", "hashes.txt", "calls.txt", "certs.txt", "pkgs.txt")
+    private val names = listOf("hosts.txt", "hashes.txt", "calls.txt", "certs.txt", "pkgs.txt", "bloat.txt")
 
     private fun dir(c: Context): File = File(c.filesDir, "defs").apply { mkdirs() }
     fun file(c: Context, name: String): File = File(dir(c), name)
@@ -32,11 +32,16 @@ object Defs {
             val ver = open(base + "version.txt").inputStream.bufferedReader().use { it.readText() }.trim()
             Store.putLong("defsDay", System.currentTimeMillis() / 86_400_000)
             if (ver == Store.str("defsVer") && names.all { file(c, it).exists() }) return "Definitions are current ($ver)."
+            var failed = 0
             for (n in names) {
-                val tmp = File(dir(c), "$n.tmp")
-                GZIPInputStream(open("$base$n.gz").inputStream).use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
-                if (!tmp.renameTo(file(c, n))) { tmp.copyTo(file(c, n), overwrite = true); tmp.delete() }
+                // One missing file must not block the rest: keep the previous copy of that file and carry on.
+                try {
+                    val tmp = File(dir(c), "$n.tmp")
+                    GZIPInputStream(open("$base$n.gz").inputStream).use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+                    if (!tmp.renameTo(file(c, n))) { tmp.copyTo(file(c, n), overwrite = true); tmp.delete() }
+                } catch (e: Exception) { failed++ }
             }
+            if (failed == names.size) return "Definitions update failed: no files could be downloaded."
             Store.put("defsVer", ver)
             Store.log("Definitions updated: $ver")
             "Definitions updated ($ver)."
@@ -80,6 +85,14 @@ object Defs {
         return false
     }
 
+    /** Community-rated preinstalled apps that are safe to disable: package name to a one-line description. */
+    fun bloat(c: Context): Map<String, String> = try {
+        file(c, "bloat.txt").readLines().mapNotNull {
+            val i = it.indexOf('\t')
+            if (i > 0) it.substring(0, i) to it.substring(i + 1) else null
+        }.toMap()
+    } catch (e: Exception) { emptyMap() }
+
     fun callPrefixes(c: Context): List<String> = try {
         file(c, "calls.txt").readLines().map { it.filter { ch -> ch.isDigit() } }.filter { it.length >= 3 }
     } catch (e: Exception) { emptyList() }
@@ -118,7 +131,9 @@ object Scanner {
         val out = ArrayList<Hit>()
         var count = 0
         for (ai in pm.getInstalledApplications(0)) {
-            if (ai.flags and ApplicationInfo.FLAG_SYSTEM != 0 || ai.packageName == c.packageName) continue
+            // Preinstalled apps are checked against hashes and certificates too. The behaviour checks below are for apps you added.
+            val system = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0
+            if (ai.packageName == c.packageName) continue
             val pi = try {
                 pm.getPackageInfo(ai.packageName, PackageManager.GET_PERMISSIONS or PackageManager.GET_SIGNING_CERTIFICATES)
             } catch (e: Exception) { continue }
@@ -138,6 +153,7 @@ object Scanner {
                 out.add(Hit(ai.packageName, label, 2, "Signed with a certificate used by known stalkerware, which lets someone else read this phone. Uninstall it."))
                 continue
             }
+            if (system) continue
             if (Defs.contains(pkgs, ai.packageName)) {
                 out.add(Hit(ai.packageName, label, 1, "Its package name matches known stalkerware. If you did not install it yourself, uninstall it."))
                 continue
@@ -157,6 +173,7 @@ object Scanner {
         Store.putLong("lastScan", System.currentTimeMillis())
         Store.putLong("lastScanN", count.toLong())
         Store.putLong("lastBad", out.count { it.level == 2 }.toLong())
+        Store.put("badPkgs", out.filter { it.level == 2 }.joinToString(",") { it.pkg })
         return out.sortedByDescending { it.level }
     }
 

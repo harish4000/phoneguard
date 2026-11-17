@@ -54,6 +54,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import rikka.shizuku.Shizuku
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -233,28 +234,55 @@ private fun Protect() {
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var hits by remember { mutableStateOf<List<Scanner.Hit>?>(null) }
+    var fileHits by remember { mutableStateOf(FileScan.lastHits()) }
+    var procHits by remember { mutableStateOf<List<ProcScan.Hit>?>(null) }
+    var procRan by remember { mutableStateOf(false) }
+    var armed by remember { mutableStateOf("") }
+    val filesOk = remember(refresh) { FileScan.allowed() }
     var upd by remember { mutableStateOf("") }
     val ready = remember(refresh) { Shell.granted() }
     val dns = remember(refresh) { Web.dnsName(c) }
     val findings by produceState<List<Security.Finding>?>(null, refresh) { value = withContext(Dispatchers.IO) { Security.scan(c) } }
 
-    Section("Malware scan") {
+    Section("Antivirus scan") {
         Text("Definitions: ${Defs.version()}")
-        Text("Last scan: ${ago(Store.long("lastScan"))}, ${Store.long("lastScanN")} apps checked")
+        Text("Last scan: ${ago(Store.long("lastScan"))}")
+        Small("${Store.long("lastScanN")} apps, ${Store.long("lastFileN")} files, ${Store.long("lastProcN")} running processes checked")
+        if (!filesOk) {
+            Button(onClick = {
+                scope.launch {
+                    val ok = withContext(Dispatchers.IO) { FileScan.grant(c) }
+                    if (!ok) try {
+                        c.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:" + c.packageName)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } catch (e: Exception) { }
+                    delay(800)
+                    refresh++
+                }
+            }) { Text("Allow file scanning") }
+            Small("Needed to scan every file in storage, and to check downloads the moment they arrive.")
+        }
         Button(enabled = !busy, onClick = {
             busy = true
             scope.launch {
-                status = withContext(Dispatchers.IO) { Defs.update(c, force = true) }
-                hits = withContext(Dispatchers.IO) { Scanner.scan(c) + Scanner.downloads(c) }
+                status = "Updating definitions..."
+                val d = withContext(Dispatchers.IO) { Defs.update(c, force = true) }
+                status = "Scanning apps, including preinstalled ones..."
+                hits = withContext(Dispatchers.IO) { Scanner.scan(c) }
+                status = "Scanning files..."
+                fileHits = withContext(Dispatchers.IO) { FileScan.scan(c) }
+                status = "Scanning running processes..."
+                procHits = withContext(Dispatchers.IO) { ProcScan.scan(c) }
+                procRan = true
+                status = d
                 busy = false
                 refresh++
             }
-        }) { Text(if (busy) "Scanning..." else "Update and scan now") }
+        }) { Text(if (busy) "Scanning..." else "Update and scan everything") }
         if (status.isNotEmpty()) Small(status)
         hits?.let { h ->
-            if (h.isEmpty()) Text("No threats found.")
+            if (h.isEmpty() && fileHits.isEmpty() && procHits.isNullOrEmpty()) Text("No threats found.")
             h.forEach { x ->
-                Text((if (x.level == 2) "MALWARE: " else "REVIEW: ") + x.label,
+                Text((if (x.level == 2) "MALWARE APP: " else "REVIEW APP: ") + x.label,
                     color = if (x.level == 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                 Small(x.why)
                 if (x.pkg.isNotEmpty()) TextButton(onClick = {
@@ -264,7 +292,31 @@ private fun Protect() {
                 }) { Text("Open app info to uninstall") }
             }
         }
-        Small("Runs daily and whenever an app is installed. It matches apps against known malware and flags risky sideloaded apps. Play Protect stays on as the first layer.")
+        fileHits.forEach { x ->
+            Text((if (x.level == 2) "MALWARE FILE: " else "REVIEW FILE: ") + x.path.substringAfterLast('/'),
+                color = if (x.level == 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            Small(x.why)
+            Small(x.path.removePrefix("/storage/emulated/0/"))
+            TextButton(onClick = {
+                if (armed != x.path) armed = x.path
+                else scope.launch {
+                    val gone = withContext(Dispatchers.IO) { try { java.io.File(x.path).delete() } catch (e: Exception) { false } }
+                    if (gone) {
+                        Store.log("Deleted flagged file ${x.path.substringAfterLast('/')}")
+                        FileScan.forget(x.path)
+                        fileHits = fileHits.filter { it.path != x.path }
+                    } else status = "Could not delete it. Remove it in the Files app."
+                    armed = ""
+                }
+            }) { Text(if (armed == x.path) "Tap again to delete permanently" else "Delete file") }
+        }
+        procHits?.forEach { x ->
+            Text((if (x.level == 2) "MALWARE RUNNING: " else "REVIEW PROCESS: ") + x.name,
+                color = if (x.level == 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            Small(x.why)
+        }
+        if (procRan && procHits == null) Small("Process scan skipped: it needs Shizuku running.")
+        Small("Checks every installed and preinstalled app, every file in shared storage that can carry code, and every running process. Apps and files are also checked as they arrive. Android does not let any app read other apps' private data or memory, so nothing on Android can scan those.")
     }
     Section("Web protection") {
         val on = dns != null && dns != "automatic"
@@ -336,6 +388,13 @@ private fun Scams() {
                 }
             }
         }) { Text("Check") }
+        OutlinedButton(onClick = {
+            try {
+                GmsBarcodeScanning.getClient(c).startScan()
+                    .addOnSuccessListener { code -> code.rawValue?.let { text = it; verdict = null; ai = "" } }
+                    .addOnFailureListener { ai = "QR scanner is not available on this phone yet. Try again in a minute." }
+            } catch (e: Exception) { ai = "QR scanner is not available on this phone." }
+        }) { Text("Scan a QR code") }
         verdict?.let { v ->
             Text("${v.label} (risk ${v.score} of 100)",
                 color = if (v.score >= 60) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
@@ -343,7 +402,7 @@ private fun Scams() {
             if (v.score < 30) Small("No red flags is not proof it is safe. If it asks for money, codes or a login, verify through a number you already know.")
         }
         if (ai.isNotEmpty()) { Text("Second opinion"); Small(ai) }
-        Small("Tip: in any app, select text or tap Share, then pick Check for scam. For a QR code, scan it with the camera and share the link here before opening it.")
+        Small("Tip: in any app, select text or tap Share, then pick Check for scam. A scanned QR code lands in the box above, so you can check it before opening it.")
     }
     Section("Automatic scam alerts") {
         Text(if (auto) "On" else "Off")
@@ -487,12 +546,13 @@ private fun Apps() {
             bl == null -> Small("Start Shizuku once so the app can read usage history.")
             bl.isEmpty() -> Small("Nothing to suggest.")
             else -> {
-                Small("Preinstalled apps not opened in 30 days. On a new phone, wait a few weeks before trusting this list. Disabling is reversible below.")
+                Small("Preinstalled apps you have not opened in 30 days, limited to ones the community debloat list rates safe to remove. Disabling is reversible below.")
                 bl.forEach { r ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(r.label, Modifier.weight(1f))
                         TextButton(enabled = ready, onClick = { act { Bloat.disable(r.pkg) } }) { Text("Disable") }
                     }
+                    if (r.note.isNotEmpty()) Small(r.note)
                 }
             }
         }

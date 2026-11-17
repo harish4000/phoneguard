@@ -9,7 +9,8 @@ Personal Android app that keeps a phone fast and safe. Built for one family, sid
 - Thermal guard, charge guard, cache cleanup, background-hog detector, storage health, reversible disabling of unused preinstalled apps.
 
 **Protection** (works without Shizuku)
-- Malware and stalkerware scan of installed apps against daily definitions, plus a behaviour check on sideloaded apps. Runs daily and on every install.
+- Antivirus scan of every installed and preinstalled app, every file in shared storage that can carry code, and every running process (process scan needs Shizuku). Runs daily, on every app install, and on files as they arrive in download folders.
+- Alert the moment any app gains screen control, notification access or device admin.
 - Automatic scam alerts on incoming texts and chat messages, checked on the phone only.
 - Protection score, weekly report, weekly breach monitoring, unsafe Wi-Fi warning.
 - Web protection through filtering DNS (Quad9).
@@ -45,6 +46,7 @@ Edit these files and push. Every phone picks up the change with the next definit
 
 - Phishing and malware domains: [Phishing.Database](https://github.com/Phishing-Database/Phishing.Database) and [OpenPhish](https://openphish.com).
 - Stalkerware package names, certificates and hashes: [Echap stalkerware-indicators](https://github.com/AssoEchap/stalkerware-indicators), CC BY 4.0.
+- Safe-to-disable preinstalled apps: [Universal Android Debloater](https://github.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation) list, GPL-3.0, entries rated Recommended.
 - Malware hashes: [MalwareBazaar](https://bazaar.abuse.ch), when the key is set.
 - Breach data: [XposedOrNot](https://xposedornot.com) and [Pwned Passwords](https://haveibeenpwned.com/Passwords).
 

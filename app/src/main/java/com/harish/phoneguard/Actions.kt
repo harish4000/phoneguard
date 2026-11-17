@@ -97,7 +97,7 @@ object Rogue {
 
 /** Reversible disabling of preinstalled apps that have not been opened in 30 days. */
 object Bloat {
-    data class Row(val pkg: String, val label: String)
+    data class Row(val pkg: String, val label: String, val note: String = "")
 
     private val keepPrefix = listOf(
         "com.android.", "com.google.android.gms", "com.google.android.gsf", "com.google.android.ext",
@@ -115,6 +115,14 @@ object Bloat {
         if (used.isEmpty()) return null
         val cutoff = System.currentTimeMillis() - 30L * 86_400_000
         val pm = c.packageManager
+        val rated = Defs.bloat(c)
+        if (rated.isNotEmpty()) {
+            // Community list: only apps rated safe to remove, and only if you have not opened them in 30 days.
+            return pm.getInstalledApplications(0).filter {
+                it.flags and ApplicationInfo.FLAG_SYSTEM != 0 && it.enabled && it.packageName in rated &&
+                    keepPrefix.none { k -> it.packageName.startsWith(k) } && (used[it.packageName] ?: 0L) < cutoff
+            }.map { Row(it.packageName, pm.getApplicationLabel(it).toString(), rated[it.packageName].orEmpty()) }.sortedBy { it.label }
+        }
         return pm.getInstalledApplications(0).filter {
             it.flags and ApplicationInfo.FLAG_SYSTEM != 0 && it.enabled &&
                 pm.getLaunchIntentForPackage(it.packageName) != null &&

@@ -19,8 +19,8 @@ android {
         applicationId = "com.harish.phoneguard"
         minSdk = 30
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.1"
+        versionCode = 5
+        versionName = "2.2"
         buildConfigField("String", "UPDATE_URL", "\"${project.findProperty("updateUrl") ?: ""}\"")
     }
 
@@ -63,6 +63,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 }

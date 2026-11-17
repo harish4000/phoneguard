@@ -7,6 +7,7 @@ Output files are sorted one-entry-per-line text, gzipped, because the app binary
   calls.txt   spam-call numbers and prefixes
   certs.txt   SHA-1 of signing certificates used by known stalkerware
   pkgs.txt    package names of known stalkerware
+  bloat.txt   preinstalled apps the community rates safe to remove: package, tab, one-line description
   version.txt date and counts
 """
 import gzip
@@ -160,6 +161,26 @@ def build_stalkerware():
     return sorted(pkgs), sorted(certs), hashes
 
 
+def build_bloat():
+    """Universal Android Debloater list (GPL-3.0). Only entries rated Recommended, the safest tier."""
+    url = ("https://raw.githubusercontent.com/Universal-Debloater-Alliance/"
+           "universal-android-debloater-next-generation/main/resources/assets/uad_lists.json")
+    rows = []
+    try:
+        data = json.loads(fetch(url))
+        items = data.items() if isinstance(data, dict) else [(x.get("id"), x) for x in data]
+        for pkg, v in items:
+            if not pkg or v.get("removal") != "Recommended" or not PKG_RX.match(pkg):
+                continue
+            desc = (v.get("description") or "").strip().splitlines()
+            note = re.sub(r"[^\x20-\x7e]", "", desc[0] if desc else "").replace("\t", " ").strip()[:140]
+            rows.append(f"{pkg}\t{note}")
+        print(f"debloat list: {len(rows)} apps rated safe to remove")
+    except Exception as e:
+        print(f"debloat list: FAILED {e}")
+    return sorted(rows)
+
+
 def build_calls():
     out = set()
     for line in lines_of("data/calls.txt"):
@@ -187,6 +208,14 @@ def main():
     write_gz("calls.txt", calls)
     write_gz("certs.txt", certs)
     write_gz("pkgs.txt", pkgs)
+    bloat = build_bloat()
+    if bloat:
+        write_gz("bloat.txt", bloat)
+    else:  # keep the app's download from failing if the list is unreachable today
+        try:
+            open(os.path.join(OUT, "bloat.txt.gz"), "wb").write(fetch(f"https://github.com/{REPO}/releases/download/defs/bloat.txt.gz"))
+        except Exception:
+            write_gz("bloat.txt", [])
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with open(os.path.join(OUT, "version.txt"), "w") as f:
         f.write(f"{stamp} hosts={len(hosts)} hashes={len(hashes)} certs={len(certs)} pkgs={len(pkgs)} calls={len(calls)}\n")

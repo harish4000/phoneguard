@@ -92,7 +92,8 @@ object Score {
         val todo = ArrayList<String>()
         fun lose(points: Int, fix: String) { s -= points; todo.add(fix) }
 
-        if (Store.long("lastBad") > 0) lose(40, "Remove the malware found by the last scan (Protect tab)")
+        if (Store.long("lastBad") + Store.long("lastBadFiles") + Store.long("lastBadProcs") > 0) lose(40, "Remove the malware found by the last scan (Protect tab)")
+        if (!FileScan.allowed()) lose(5, "Allow file scanning (Protect tab)")
         Security.scan(c).filter { it.level == 2 }.forEach { lose(20, it.title) }
         val dns = Web.dnsName(c)
         if (dns == null || dns == "automatic") lose(10, "Turn on web protection (Protect tab)")
@@ -118,7 +119,7 @@ object Digest {
         val parts = listOf(
             "${Store.long("wkCalls")} calls blocked or silenced",
             "${Store.long("wkScams")} scam messages flagged",
-            "${Store.long("lastScanN")} apps scanned, ${Store.long("wkMalware")} threats"
+            "${Store.long("lastScanN")} apps and ${Store.long("lastFileN")} files scanned, ${Store.long("wkMalware")} threats"
         )
         val next = r.todo.firstOrNull()?.let { " Next step: $it." } ?: ""
         Notify.alert(c, 25, "Weekly protection report: ${r.score} of 100", parts.joinToString(", ") + "." + next)

@@ -55,6 +55,7 @@ class MonitorService : Service() {
     private var prevBright = -1
     private var chargeAlerted = false
     private var hotChargeAlerted = false
+    private var watch: android.os.FileObserver? = null
 
     /** Scans as soon as an app is installed or updated. Runs on the monitor thread. */
     private val installs = object : BroadcastReceiver() {
@@ -86,7 +87,7 @@ class MonitorService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onDestroy() { try { unregisterReceiver(installs) } catch (e: Exception) { }; thread.quitSafely(); super.onDestroy() }
+    override fun onDestroy() { try { unregisterReceiver(installs) } catch (e: Exception) { }; watch?.stopWatching(); thread.quitSafely(); super.onDestroy() }
 
     private fun tick() {
         n++
@@ -153,6 +154,8 @@ class MonitorService : Service() {
             Actions.trimCaches()
         }
         Smart.storageRelief()
+        ensureWatch()
+        try { Powers.check(this) } catch (e: Throwable) { }
         val day = now / 86_400_000
         if (Store.long("defsDay") != day) {
             val before = Defs.version()
@@ -162,6 +165,7 @@ class MonitorService : Service() {
         if (Store.long("day") == day) return
         Store.putLong("day", day)
         scanAndAlert()
+        deepScan()
         if (ready) Shell.bootstrap(this)
         val st = Device.storage()
         val pct = st.first * 100 / st.second
@@ -174,13 +178,43 @@ class MonitorService : Service() {
     }
 
     private fun scanAndAlert() {
-        val hits = Scanner.scan(this) + Scanner.downloads(this)
-        val bad = hits.filter { it.level == 2 }
+        val bad = Scanner.scan(this).filter { it.level == 2 }
         if (bad.isNotEmpty()) {
             Store.log("Scan: malware match in " + bad.joinToString(", ") { it.label })
             Store.inc("wkMalware")
             Notify.alert(this, 24, "Malware found", bad.joinToString(", ") { it.label } + ". Open PhoneGuard, Protect.")
         }
+    }
+
+    /** Daily: files changed since the last scan, and everything running right now. */
+    private fun deepScan() {
+        val files = FileScan.scan(this, Store.long("lastFileScan")).filter { it.level == 2 }
+        if (files.isNotEmpty()) {
+            Store.inc("wkMalware")
+            Notify.alert(this, 27, "Malware file found", files.joinToString(", ") { it.path.substringAfterLast('/') } + ". Open PhoneGuard, Protect, to delete it.")
+        }
+        val procs = ProcScan.scan(this).orEmpty().filter { it.level == 2 }
+        if (procs.isNotEmpty()) {
+            Store.inc("wkMalware")
+            Notify.alert(this, 28, "Malware is running", procs.joinToString(", ") { it.name } + ". Open PhoneGuard, Protect.")
+        }
+    }
+
+    /** Real-time check of files as they land in download and received-file folders. */
+    private fun ensureWatch() {
+        if (watch != null) return
+        watch = FileScan.observer { f ->
+            h.postDelayed({
+                try {
+                    val hit = FileScan.check(this, f) ?: return@postDelayed
+                    FileScan.remember(hit)
+                    Store.log("File flagged: ${f.name} (${hit.why})")
+                    if (hit.level == 2) Store.inc("wkMalware")
+                    Notify.alert(this, 29, if (hit.level == 2) "Malware file received" else "Suspicious file received", "${f.name}: ${hit.why} Open PhoneGuard, Protect.")
+                } catch (e: Throwable) { }
+            }, 2500)
+        }
+        watch?.startWatching()
     }
 
     companion object {
