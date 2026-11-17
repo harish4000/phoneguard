@@ -39,6 +39,6 @@ object Shell {
     /** Self setup once access is granted: usage access, notifications, exemption from battery optimisation. */
     fun bootstrap(c: Context) {
         val p = c.packageName
-        run("appops set $p GET_USAGE_STATS allow; pm grant $p android.permission.POST_NOTIFICATIONS; dumpsys deviceidle whitelist +$p")
+        run("appops set $p GET_USAGE_STATS allow; appops set $p REQUEST_INSTALL_PACKAGES allow; pm grant $p android.permission.POST_NOTIFICATIONS; dumpsys deviceidle whitelist +$p")
     }
 }

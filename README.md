@@ -26,7 +26,7 @@ Play Protect stays on as the first layer. PhoneGuard is the second.
 | What | How | When |
 |---|---|---|
 | Threat definitions | `.github/workflows/defs.yml` builds them from public feeds and publishes them to the `defs` release | Daily |
-| The app | `.github/workflows/build.yml` builds and signs every push, and publishes a release when `main` carries a new version | On each version bump |
+| The app | `.github/workflows/build.yml` builds and signs every push, and publishes a release when `main` carries a new version. Phones install it by themselves while the screen is off | On each version bump |
 
 Phones check both daily. An app update installs only if its checksum matches and it is signed with the same key.
 

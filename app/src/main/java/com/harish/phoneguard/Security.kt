@@ -2,7 +2,10 @@ package com.harish.phoneguard
 
 import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.pm.PackageInstaller
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
@@ -135,14 +138,73 @@ object Updater {
             if (!sameSigner(c, f)) {
                 f.delete(); Store.log("Update rejected: signature mismatch"); return "Update rejected: signature mismatch."
             }
-            val uri = FileProvider.getUriForFile(c, c.packageName + ".files", f)
-            val install = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            Notify.alert(c, 30, "PhoneGuard update ready", "Tap to install version ${j.optString("versionName")}.", install)
-            Store.log("Update downloaded and verified")
+            Store.putLong("updPending", j.getInt("versionCode").toLong())
+            Store.put("updName", j.optString("versionName"))
+            Store.log("Update ${j.optString("versionName")} downloaded and verified")
+            if (Store.bool("autoUpdate", true)) return "Update ${j.optString("versionName")} verified. It installs by itself when the screen is off."
+            Notify.alert(c, 30, "PhoneGuard update ready", "Tap to install version ${j.optString("versionName")}.", viewIntent(c, f))
             "Update verified. Tap the notification to install."
         } catch (e: Exception) {
             "Update check failed: ${e.message}"
+        }
+    }
+
+    private fun apk(c: Context): File = File(c.cacheDir, "update/phoneguard.apk")
+
+    private fun viewIntent(c: Context, f: File): Intent {
+        val uri = FileProvider.getUriForFile(c, c.packageName + ".files", f)
+        return Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    fun pending(c: Context): Boolean = Store.long("updPending") > BuildConfig.VERSION_CODE && apk(c).exists()
+
+    /**
+     * Installs a verified, pending update without a tap. Android allows an app to update itself silently once
+     * it holds the install permission. If Android still wants a confirmation, UpdateReceiver turns that into a notification.
+     */
+    fun install(c: Context): Boolean {
+        if (!pending(c)) return false
+        val f = apk(c)
+        if (!sameSigner(c, f)) { f.delete(); return false }
+        return try {
+            val installer = c.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            params.setAppPackageName(c.packageName)
+            if (Build.VERSION.SDK_INT >= 31) params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            val id = installer.createSession(params)
+            installer.openSession(id).use { s ->
+                s.openWrite("base.apk", 0, f.length()).use { out ->
+                    f.inputStream().use { it.copyTo(out) }
+                    s.fsync(out)
+                }
+                val done = PendingIntent.getBroadcast(c, id, Intent(c, UpdateReceiver::class.java),
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                s.commit(done.intentSender)
+            }
+            Store.log("Installing update ${Store.str("updName")}")
+            true
+        } catch (e: Exception) {
+            Store.log("Automatic install failed: ${e.message}")
+            Notify.alert(c, 30, "PhoneGuard update ready", "Tap to install version ${Store.str("updName")}.", viewIntent(c, f))
+            false
+        }
+    }
+}
+
+/** Receives the result of an automatic install. */
+class UpdateReceiver : BroadcastReceiver() {
+    override fun onReceive(c: Context, i: Intent) {
+        Store.init(c)
+        when (i.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
+            PackageInstaller.STATUS_SUCCESS -> Store.log("Update installed")
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                @Suppress("DEPRECATION")
+                val confirm = i.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+                if (confirm != null) Notify.alert(c, 30, "PhoneGuard update ready",
+                    "Android wants a one-time confirmation. Tap to install version ${Store.str("updName")}.", confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }
+            else -> Store.log("Update not installed: " + i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
         }
     }
 }

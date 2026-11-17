@@ -347,10 +347,17 @@ private fun Protect() {
         Text("Installed: v${BuildConfig.VERSION_NAME}")
         Button(onClick = {
             upd = "Checking..."
-            scope.launch { upd = withContext(Dispatchers.IO) { Updater.check(c) } }
+            scope.launch {
+                upd = withContext(Dispatchers.IO) { Updater.check(c) }
+                if (Updater.pending(c)) {
+                    upd = "Installing version ${Store.str("updName")}. The app will close and reopen."
+                    withContext(Dispatchers.IO) { Updater.install(c) }
+                }
+            }
         }) { Text("Check for update") }
         if (upd.isNotEmpty()) Small(upd)
-        Small("Checked daily. An update installs only if its checksum matches and it is signed with the same key as this app.")
+        Toggle("Install updates automatically", "autoUpdate", true)
+        Small("Checked daily and installed while the screen is off. An update installs only if its checksum matches and it is signed with the same key as this app. The first automatic install may ask you to confirm once.")
     }
 }
 

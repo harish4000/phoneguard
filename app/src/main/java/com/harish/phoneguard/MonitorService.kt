@@ -154,6 +154,7 @@ class MonitorService : Service() {
             Actions.trimCaches()
         }
         Smart.storageRelief()
+        if (!screenOn && Store.bool("autoUpdate", true)) Updater.install(this)
         ensureWatch()
         try { Powers.check(this) } catch (e: Throwable) { }
         val day = now / 86_400_000
@@ -225,6 +226,12 @@ class MonitorService : Service() {
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         if (i.action == Intent.ACTION_BOOT_COMPLETED) MonitorService.start(c)
+        if (i.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            Store.init(c)
+            Store.log("Updated to v${BuildConfig.VERSION_NAME}")
+            MonitorService.start(c)
+            Notify.alert(c, 31, "PhoneGuard updated", "Now running version ${BuildConfig.VERSION_NAME}.")
+        }
     }
 }
 
