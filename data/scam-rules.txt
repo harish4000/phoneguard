@@ -19,3 +19,11 @@
 2026-11-17	10	(claim|get) (your )?(exclusive|early|special) (discount|deal|offer)	fake limited time offer
 2026-11-17	10	(lost|missing) (fund|money|balance) (belonging to|in)	fake lost money lure
 2026-11-17	10	(protect|secure) (your )?(info|data|details)	security pretext for scam
+2026-11-18	10	claim your rbux official	promises free roblox currency via fake link
+2026-11-18	10	info resmi shopee hadiah	fake shopee prize notification in Indonesian
+2026-11-18	10	gebyar shopee promo	fake shopee promotion campaign link
+2026-11-18	10	icloud vs map localiza	fake apple location tracking scam
+2026-11-18	10	maps locatl phone help	typo-squatting map service phishing link
+2026-11-18	10	boutique dofus grimoire	fake game item shop for Dofus players
+2026-11-18	10	netflix clone stream free	fake streaming service phishing page
+2026-11-18	10	(unrecognized|unknown) (device|login|access)	catches fake security alerts
