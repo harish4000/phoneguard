@@ -27,3 +27,13 @@
 2026-11-18	10	boutique dofus grimoire	fake game item shop for Dofus players
 2026-11-18	10	netflix clone stream free	fake streaming service phishing page
 2026-11-18	10	(unrecognized|unknown) (device|login|access)	catches fake security alerts
+2026-11-19	10	upgrade your shopee account now	impersonates shopee to steal credentials
+2026-11-19	10	verify your spotify premium status	fake spotify verification link scam
+2026-11-19	10	claim your netflix unredeemed gift card	fake netflix gift card phishing attempt
+2026-11-19	10	secure your phantom wallet access	fake phantom wallet security alert
+2026-11-19	10	update your adobe subscription billing	fake adobe billing update scam
+2026-11-19	10	confirm your instagram login location	fake instagram security alert
+2026-11-19	10	recover your roblox rbux balance	fake roblox currency recovery scam
+2026-11-19	10	verify your canadian anti-fraud centre report	impersonates cafc to extract personal data
+2026-11-19	10	(confirm|verify) your (identity|details|location) to (keep|protect|prevent)	Matches identity verification with protective outcomes
+2026-11-19	10	(session|access) (expired|revoked) for (security reasons|unauthorized access)	Identifies session expiration scams
