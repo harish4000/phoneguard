@@ -37,3 +37,11 @@
 2026-11-19	10	verify your canadian anti-fraud centre report	impersonates cafc to extract personal data
 2026-11-19	10	(confirm|verify) your (identity|details|location) to (keep|protect|prevent)	Matches identity verification with protective outcomes
 2026-11-19	10	(session|access) (expired|revoked) for (security reasons|unauthorized access)	Identifies session expiration scams
+2026-11-20	10	update your (payment method|billing info) now	demands financial data under false pretenses
+2026-11-20	10	(session|access) (has expired|is invalid)	claims technical failure to force login
+2026-11-20	10	(recover|restore) your (lost|stolen) (funds|balance)	targets victims of previous scams with false hope
+2026-11-20	10	(security alert|profile alert) on your profile	Matches fake security warning scams
+2026-11-20	10	(new message|notification) from support regarding	Matches fake support notification scams
+2026-11-20	10	notice about your subscription renewal	Matches fake subscription scam
+2026-11-20	10	(verify|validate) (identity|account) (now|immediately)	Matches identity verification urgency
+2026-11-20	10	(important notice|alert) about (your )?(subscription)	Matches subscription renewal scams
