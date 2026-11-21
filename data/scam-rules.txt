@@ -45,3 +45,10 @@
 2026-11-20	10	notice about your subscription renewal	Matches fake subscription scam
 2026-11-20	10	(verify|validate) (identity|account) (now|immediately)	Matches identity verification urgency
 2026-11-20	10	(important notice|alert) about (your )?(subscription)	Matches subscription renewal scams
+2026-11-21	10	facebook official page verify	impersonating facebook to steal credentials
+2026-11-21	10	instagram support verify account	impersonating instagram support for phishing
+2026-11-21	10	shopee hadiah resmi claim	indonesian shopee fake prize scam
+2026-11-21	10	canadian anti-fraud centre report fraud	impersonating government agency to build trust
+2026-11-21	10	boutique dofus grimoire rewards	impersonating game official store for phishing
+2026-11-21	10	(flagged|suspicious) (login|activity)	detects fake security warnings
+2026-11-21	10	(seed phrase|recovery details) (expiring|backup)	targets crypto scam tactics
