@@ -52,3 +52,9 @@
 2026-11-21	10	boutique dofus grimoire rewards	impersonating game official store for phishing
 2026-11-21	10	(flagged|suspicious) (login|activity)	detects fake security warnings
 2026-11-21	10	(seed phrase|recovery details) (expiring|backup)	targets crypto scam tactics
+2026-11-22	10	your (roblox|dofus) (private server|grimoire) (link|rewards) (expired|ready)	catches specific game event scams
+2026-11-22	10	(magazine luiza|shopee) (flash sale|promo) (starts|exclusive)	catches fake retail flash sale scams
+2026-11-22	10	(netflix clone|streaming) (trial|account) (expired|upgrade)	catches fake streaming service scams
+2026-11-22	10	(facebook login attempt blocked|regain access)	catches fake social media lockout scams
+2026-11-22	10	(tap here to restore|claim your items) (before|now)	catches urgent action phrasing in game scams
+2026-11-22	10	(prevent loss|service interruption|without ads)	catches fear-based consequence phrasing
