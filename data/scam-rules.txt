@@ -58,3 +58,13 @@
 2026-11-22	10	(facebook login attempt blocked|regain access)	catches fake social media lockout scams
 2026-11-22	10	(tap here to restore|claim your items) (before|now)	catches urgent action phrasing in game scams
 2026-11-22	10	(prevent loss|service interruption|without ads)	catches fear-based consequence phrasing
+2026-11-23	10	facebook login attempt blocked	impersonates social media security alert
+2026-11-23	10	regain access (to|for) your account	promises account recovery via malicious link
+2026-11-23	10	tap here to restore (your )?(items|balance)	uses urgency to trick user into clicking scam link
+2026-11-23	10	verify your (roblox|dofus) (private server|grimoire)	impersonates gaming platform for credential theft
+2026-11-23	10	(flagged|suspicious) (login|activity) on your profile	creates false security alert to drive clicks
+2026-11-23	10	(account|listing) (has been|was) (limited|flagged) (due to|for)	Captures urgency regarding restricted accounts or listings
+2026-11-23	10	(verify|check) (your )?(seller status|listing)	Targets marketplace seller verification scams
+2026-11-23	10	(click|tap) (to )?(verify|claim)	Captures call-to-action for verification or claiming
+2026-11-23	10	(expire|expiring) (forever|soon|now)	Captures false urgency regarding expiration times
+2026-11-23	10	(unverified|invalid) (payment|info)	Targets excuses for account limitations
