@@ -68,3 +68,19 @@
 2026-11-23	10	(click|tap) (to )?(verify|claim)	Captures call-to-action for verification or claiming
 2026-11-23	10	(expire|expiring) (forever|soon|now)	Captures false urgency regarding expiration times
 2026-11-23	10	(unverified|invalid) (payment|info)	Targets excuses for account limitations
+2026-11-24	10	facebook secure account id	impersonating facebook security login
+2026-11-24	10	usps for business website	fake usps business portal link
+2026-11-24	10	amazon clone two tan	fake amazon shopping site link
+2026-11-24	10	discord nitro free trial	fake discord premium offer
+2026-11-24	10	airbnb help topic	fake airbnb support impersonation
+2026-11-24	10	sso auth facebook secure	generic sso phishing for facebook
+2026-11-24	10	midasbuy official store	fake gaming top-up site
+2026-11-24	10	shopee loja vercel app	fake shopee brazilian store link
+2026-11-24	10	(unusual|suspicious) (activity|behavior) on your (profile|account)	matches facebook security alert phrasing
+2026-11-24	10	(private server|invite) (is pending|waiting)	matches roblox game-specific urgency
+2026-11-24	10	(booking|reservation) (requires|needs) (verification|review)	matches airbnb travel context
+2026-11-24	10	(nitro|premium) (benefits|features) are (waiting|ready)	matches discord subscription scam
+2026-11-24	10	(rewards|items) (are ready|pending) for (collection|claim)	matches gaming reward scam pattern
+2026-11-24	10	(prevent|avoid) (permanent|immediate) (suspension|ban)	matches high-pressure account threat
+2026-11-24	10	(restore|recover) (your )?(balance|items)	matches gaming account recovery scam
+2026-11-24	10	(claim|collect) (your )?(exclusive|free) (rewards|benefits)	matches gaming incentive lure
