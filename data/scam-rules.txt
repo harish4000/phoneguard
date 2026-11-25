@@ -84,3 +84,5 @@
 2026-11-24	10	(prevent|avoid) (permanent|immediate) (suspension|ban)	matches high-pressure account threat
 2026-11-24	10	(restore|recover) (your )?(balance|items)	matches gaming account recovery scam
 2026-11-24	10	(claim|collect) (your )?(exclusive|free) (rewards|benefits)	matches gaming incentive lure
+2026-11-25	10	netflix clone streaming trial	promises free service to steal credentials or payment
+2026-11-25	10	(secure|protect) your (connection|account) before it's (cut off|locked)	Matches threat-based urgency pattern
