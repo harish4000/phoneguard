@@ -611,7 +611,7 @@ private fun Clean() {
                 val p = plan
                 if (p == null) Small("Counting older photos and videos...")
                 else if (p.files.isEmpty()) Small("Nothing older than 30 days to move.")
-                else Text("${p.files.size} photos, videos${if (dl) ", large downloads" else ""} older than 30 days: ${gb(p.bytes)}")
+                else Text("${p.files.size} photos, videos, music${if (dl) ", large downloads" else ""} older than 30 days: ${gb(p.bytes)}")
                 Button(enabled = !moving && p != null && p.files.isNotEmpty(), onClick = {
                     moving = true
                     scope.launch {
@@ -626,6 +626,7 @@ private fun Clean() {
                     Switch(checked = dl, onCheckedChange = { dl = it; refresh++ })
                     Text("Include downloads over 50 MB", Modifier.weight(1f))
                 }
+                Toggle("Keep all photos, videos and music on the card (moved once a day)", "cardKeep", false)
                 Toggle("Move older photos and videos by itself when storage runs low", "cardAuto", false)
                 OutlinedButton(enabled = speed != "Testing...", onClick = {
                     speed = "Testing..."

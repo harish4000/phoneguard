@@ -203,9 +203,19 @@ object Card {
                 else if (f.lastModified() < cutoff && f.length() >= minSize) out.add(f)
             }
         }
-        listOf("DCIM", "Pictures", "Movies").forEach { walk(File(root, it), 1) }
+        listOf("DCIM", "Pictures", "Movies", "Music").forEach { walk(File(root, it), 1) }
         if (downloads) walk(File(root, "Download"), 50_000_000)
         return Plan(out, out.sumOf { it.length() })
+    }
+
+    /**
+     * Keep-on-card mode: once a day, everything in the media folders that is more than a day old goes to the card.
+     * The one-day wait keeps it away from files that are still being written or edited.
+     */
+    fun keep(c: Context) {
+        if (!Store.bool("cardKeep", false) || !FileScan.allowed() || root(c) == null) return
+        val plan = plan(1, false)
+        if (plan.files.isNotEmpty()) move(c, plan)
     }
 
     /** Copies each file to the same folder on the card, checks the copy, and only then removes the original. */

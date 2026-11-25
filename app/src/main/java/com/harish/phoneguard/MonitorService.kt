@@ -204,6 +204,7 @@ class MonitorService : Service() {
             Notify.alert(this, 34, "Malware file found", files.joinToString(", ") { it.path.substringAfterLast('/') } + ". Open PhoneGuard, Protect, to delete it.")
         }
         Respond.purge(this)
+        Card.keep(this)
         val procs = ProcScan.scan(this).orEmpty().filter { it.level >= 2 }
         if (procs.isNotEmpty()) {
             Store.inc("wkMalware")
