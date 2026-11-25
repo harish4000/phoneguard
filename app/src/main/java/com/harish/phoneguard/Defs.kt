@@ -116,13 +116,14 @@ object Scanner {
         }
         val keep = ArrayList<String>()
         val powers = Spy.powers(c)
+        val trusted = Respond.trusted()
         val cloud = ArrayList<Cloud.Item>()
         val out = ArrayList<Hit>()
         var count = 0
         for (ai in pm.getInstalledApplications(0)) {
             // Preinstalled apps are checked against hashes and certificates too. The behaviour checks below are for apps you added.
             val system = ai.flags and ApplicationInfo.FLAG_SYSTEM != 0
-            if (ai.packageName == c.packageName) continue
+            if (ai.packageName == c.packageName || ai.packageName in trusted) continue
             val pi = try {
                 pm.getPackageInfo(ai.packageName, PackageManager.GET_PERMISSIONS or PackageManager.GET_SIGNING_CERTIFICATES)
             } catch (e: Exception) { continue }
@@ -134,12 +135,12 @@ object Scanner {
             if (triple.length > 2) keep.add("$key|$triple")
             val hs = triple.split(':')
             if (hs.any { Defs.contains(hashes, it) }) {
-                out.add(Hit(ai.packageName, label, 2, "Matches a known malware sample. Uninstall it."))
+                out.add(Hit(ai.packageName, label, 3, "Matches a known malware sample. Uninstall it."))
                 continue
             }
             val signers = pi.signingInfo?.apkContentsSigners.orEmpty().flatMap { Hashes.ofBytes(it.toByteArray()) }
             if (signers.any { Defs.contains(certs, it) }) {
-                out.add(Hit(ai.packageName, label, 2, "Signed with a certificate used by known spyware or stalkerware, which lets someone else read this phone. Uninstall it."))
+                out.add(Hit(ai.packageName, label, 3, "Signed with a certificate used by known spyware or stalkerware, which lets someone else read this phone. Uninstall it."))
                 continue
             }
             if (system) continue
@@ -174,8 +175,8 @@ object Scanner {
         Store.put("hc", keep.joinToString(";"))
         Store.putLong("lastScan", System.currentTimeMillis())
         Store.putLong("lastScanN", count.toLong())
-        Store.putLong("lastBad", out.count { it.level == 2 }.toLong())
-        Store.put("badPkgs", out.filter { it.level == 2 }.joinToString(",") { it.pkg })
+        Store.putLong("lastBad", out.count { it.level >= 2 }.toLong())
+        Store.put("badPkgs", out.filter { it.level >= 2 }.joinToString(",") { it.pkg })
         Cloud.enqueue(c, cloud)
         return out.sortedByDescending { it.level }
     }

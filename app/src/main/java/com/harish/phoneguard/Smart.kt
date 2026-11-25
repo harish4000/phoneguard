@@ -105,6 +105,16 @@ object Smart {
         if (!on()) return
         val st = Device.storage()
         if (st.first * 100 / st.second >= 15) return
+        // With a memory card and permission to use it, old photos and videos go there first.
+        if (Store.bool("cardAuto", false) && FileScan.allowed() && Card.root(c) != null &&
+            System.currentTimeMillis() - Store.long("lastCardMove") > 86_400_000) {
+            Store.putLong("lastCardMove", System.currentTimeMillis())
+            val plan = Card.plan(30, false)
+            if (plan.files.isNotEmpty()) {
+                val r = Card.move(c, plan)
+                if (r.moved > 0) Notify.alert(c, 35, "Storage was running low", "Moved ${r.moved} older photos and videos (${r.bytes / 1_000_000} MB) to the memory card.")
+            }
+        }
         if (System.currentTimeMillis() - Store.long("lastClean") < 86_400_000) return
         Store.log("Smart: storage under 15%, cleaning caches")
         Actions.trimCaches(c)

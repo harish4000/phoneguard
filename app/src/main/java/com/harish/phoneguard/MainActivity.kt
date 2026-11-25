@@ -253,6 +253,8 @@ private fun Protect() {
     var armed by remember { mutableStateOf("") }
     var aiApp by remember { mutableStateOf(mapOf<String, String>()) }
     var vt by remember { mutableStateOf(Store.str("vtKey")) }
+    val quar = remember(refresh) { Respond.list() }
+    val contained = remember(refresh) { Respond.contained().toList().sorted() }
     val filesOk = remember(refresh) { FileScan.allowed() }
     var upd by remember { mutableStateOf("") }
     val ready = remember(refresh) { Ctl.can(c) }
@@ -284,9 +286,9 @@ private fun Protect() {
                 status = "Updating definitions..."
                 val d = withContext(Dispatchers.IO) { Defs.update(c, force = true) }
                 status = "Scanning apps, including preinstalled ones..."
-                hits = withContext(Dispatchers.IO) { Scanner.scan(c) }
+                hits = withContext(Dispatchers.IO) { Scanner.scan(c).also { found -> found.forEach { Respond.app(c, it) } } }
                 status = "Scanning files..."
-                fileHits = withContext(Dispatchers.IO) { FileScan.scan(c) }
+                fileHits = withContext(Dispatchers.IO) { Respond.files(c, FileScan.scan(c)); FileScan.lastHits() }
                 status = "Scanning running processes..."
                 procHits = withContext(Dispatchers.IO) { ProcScan.scan(c) }
                 procRan = true
@@ -299,14 +301,19 @@ private fun Protect() {
         hits?.let { h ->
             if (h.isEmpty() && fileHits.isEmpty() && procHits.isNullOrEmpty()) Text("No threats found.")
             h.forEach { x ->
-                Text((if (x.level == 2) "MALWARE APP: " else "REVIEW APP: ") + x.label,
-                    color = if (x.level == 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                Text((if (x.level >= 2) "MALWARE APP: " else "REVIEW APP: ") + x.label,
+                    color = if (x.level >= 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                 Small(x.why)
                 if (x.pkg.isNotEmpty()) TextButton(onClick = {
                     try {
                         c.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + x.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     } catch (e: Exception) { }
                 }) { Text("Open app info to uninstall") }
+                if (x.pkg.isNotEmpty()) TextButton(onClick = {
+                    Respond.trust(x.pkg)
+                    Store.log("Marked ${x.label} as trusted")
+                    hits = hits?.filter { it.pkg != x.pkg }
+                }) { Text("This app is safe, stop flagging it") }
                 if (x.pkg.isNotEmpty() && Scam.aiOn()) {
                     TextButton(onClick = {
                         aiApp = aiApp + (x.pkg to "Asking the home AI...")
@@ -320,8 +327,8 @@ private fun Protect() {
             }
         }
         fileHits.forEach { x ->
-            Text((if (x.level == 2) "MALWARE FILE: " else "REVIEW FILE: ") + x.path.substringAfterLast('/'),
-                color = if (x.level == 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            Text((if (x.level >= 2) "MALWARE FILE: " else "REVIEW FILE: ") + x.path.substringAfterLast('/'),
+                color = if (x.level >= 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
             Small(x.why)
             Small(x.path.removePrefix("/storage/emulated/0/"))
             TextButton(onClick = {
@@ -338,12 +345,34 @@ private fun Protect() {
             }) { Text(if (armed == x.path) "Tap again to delete permanently" else "Delete file") }
         }
         procHits?.forEach { x ->
-            Text((if (x.level == 2) "MALWARE RUNNING: " else "REVIEW PROCESS: ") + x.name,
-                color = if (x.level == 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            Text((if (x.level >= 2) "MALWARE RUNNING: " else "REVIEW PROCESS: ") + x.name,
+                color = if (x.level >= 2) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
             Small(x.why)
         }
         if (procRan && procHits == null) Small("Process scan skipped: it needs the one-time setup or Shizuku.")
+        Toggle("Act on confirmed malware automatically", "autoAct", true)
+        Small("Confirmed malware is dealt with at once: files are quarantined, and apps lose screen control and notification access and are stopped (disabled too when Shizuku is running). Nothing is deleted or uninstalled without you. Uncertain findings are only reported.")
         Small("Checks every installed and preinstalled app, every file in shared storage that can carry code, and every running process. Apps and files are also checked as they arrive. Android does not let any app read other apps' private data or memory, so nothing on Android can scan those.")
+    }
+    if (quar.isNotEmpty()) Section("Quarantine") {
+        quar.forEach { q ->
+            Text(q.orig.substringAfterLast('/'))
+            Small(q.why)
+            Small("From " + q.orig.removePrefix("/storage/emulated/0/").substringBeforeLast('/') + ", taken " + ago(q.at) + ". Deleted for good after 30 days.")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { Respond.delete(c, q.id) }; refresh++ } }) { Text("Delete now") }
+                TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { Respond.restore(c, q.id) }; refresh++ } }) { Text("It is safe, restore it") }
+            }
+        }
+    }
+    if (contained.isNotEmpty()) Section("Apps disabled as malware") {
+        contained.forEach { pkg ->
+            Text(pkg, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { appInfo(c, pkg) }) { Text("Uninstall") }
+                TextButton(enabled = Shell.granted(), onClick = { scope.launch { withContext(Dispatchers.IO) { Respond.release(pkg) }; refresh++ } }) { Text("It is safe, re-enable it") }
+            }
+        }
     }
     Section("Cloud check (VirusTotal)") {
         OutlinedTextField(value = vt, onValueChange = { vt = it; Store.put("vtKey", it.trim()) }, modifier = Modifier.fillMaxWidth(),
@@ -546,6 +575,15 @@ private fun Clean() {
     val files by produceState<List<Pair<Long, String>>?>(null, refresh) {
         value = withContext(Dispatchers.IO) { Actions.largeFiles() }
     }
+    var dl by remember { mutableStateOf(false) }
+    var moving by remember { mutableStateOf(false) }
+    var cardMsg by remember { mutableStateOf("") }
+    var speed by remember { mutableStateOf("") }
+    val card = remember(refresh) { Card.root(c) }
+    val plan by produceState<Card.Plan?>(null, refresh, dl) {
+        value = null
+        value = withContext(Dispatchers.IO) { if (FileScan.allowed() && Card.root(c) != null) Card.plan(30, dl) else Card.Plan(emptyList(), 0) }
+    }
 
     Section("Storage") {
         val pct = st.first * 100 / st.second
@@ -562,6 +600,49 @@ private fun Clean() {
         Small("Clears temporary files for every app, browsers included. Logins, tabs and saved data stay.")
         if (msg.isNotEmpty()) Text(msg)
         Toggle("Clean weekly while the screen is off", "autoclean", true)
+    }
+    Section("Memory card") {
+        val root = card
+        if (root == null) Small("No memory card found. If you just inserted one, choose Portable storage when Android asks how to use it.")
+        else {
+            Text("${gb(root.usableSpace)} free of ${gb(root.totalSpace)}")
+            if (!FileScan.allowed()) Small("Allow file scanning on the Protect tab so PhoneGuard can scan the card and move files to it.")
+            else {
+                val p = plan
+                if (p == null) Small("Counting older photos and videos...")
+                else if (p.files.isEmpty()) Small("Nothing older than 30 days to move.")
+                else Text("${p.files.size} photos, videos${if (dl) ", large downloads" else ""} older than 30 days: ${gb(p.bytes)}")
+                Button(enabled = !moving && p != null && p.files.isNotEmpty(), onClick = {
+                    moving = true
+                    scope.launch {
+                        val r = withContext(Dispatchers.IO) { Card.move(c, p!!) }
+                        cardMsg = "Moved ${r.moved} files, ${gb(r.bytes)}." + (if (r.failed > 0) " ${r.failed} could not be moved and were left in place." else "") + " " + r.note
+                        moving = false
+                        refresh++
+                    }
+                }) { Text(if (moving) "Moving..." else "Move them to the card") }
+                if (cardMsg.isNotEmpty()) Text(cardMsg)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Switch(checked = dl, onCheckedChange = { dl = it; refresh++ })
+                    Text("Include downloads over 50 MB", Modifier.weight(1f))
+                }
+                Toggle("Move older photos and videos by itself when storage runs low", "cardAuto", false)
+                OutlinedButton(enabled = speed != "Testing...", onClick = {
+                    speed = "Testing..."
+                    scope.launch {
+                        val v = withContext(Dispatchers.IO) { Card.speed(c) }
+                        speed = when {
+                            v == null -> "Could not test this card."
+                            v >= 20f -> "Writes ${"%.0f".format(v)} MB a second: fast. Fine for photos and video recording."
+                            v >= 8f -> "Writes ${"%.0f".format(v)} MB a second: adequate. Fine for photos and stored media, may stutter on high-quality video recording."
+                            else -> "Writes ${"%.1f".format(v)} MB a second: slow. Use it for stored media only, and keep the camera saving to the phone."
+                        }
+                    }
+                }) { Text("Test card speed") }
+                if (speed.isNotEmpty() && speed != "Testing...") Small(speed)
+            }
+            Small("Each file is copied, the copy is checked, and only then is the original removed. Your gallery still shows them. Memory cards fail more often than phone storage, so keep photo backup on. Apps stay on the phone, which keeps them fast.")
+        }
     }
     Section("Largest files") {
         val f = files

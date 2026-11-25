@@ -57,7 +57,7 @@ object FileScan {
     /** Checks one file. Null means clean or not a file type that can carry Android code. */
     @Synchronized
     fun check(c: Context, f: File): Hit? {
-        if (!f.isFile || f.length() < 8) return null
+        if (!f.isFile || f.length() < 8 || f.name.endsWith(".quarantined")) return null
         val k = kind(f)
         if (k == NONE) return null
         val key = f.path + "|" + f.length() + "|" + f.lastModified()
@@ -65,7 +65,8 @@ object FileScan {
         if (f.length() <= MAX_HASH_BYTES) {
             val hs = Hashes.of(f)
             val hashes = Defs.file(c, "hashes.txt")
-            if (hs.any { Defs.contains(hashes, it) }) return Hit(f.path, 2, "Matches a known malware sample.")
+            if (hs.any { it in Respond.trusted() }) { clean.add(key); return null }
+            if (hs.any { Defs.contains(hashes, it) }) return Hit(f.path, 3, "Matches a known malware sample.")
             if (k == APK || k == PE) {
                 Cloud.describe(Cloud.verdict(hs[0]))?.let { return Hit(f.path, it.first, it.second) }
                 Cloud.enqueue(c, listOf(Cloud.Item(hs[0], f.name, "", f.path, true)))
@@ -77,7 +78,7 @@ object FileScan {
             val pi = try { c.packageManager.getPackageArchiveInfo(f.path, PackageManager.GET_SIGNING_CERTIFICATES) } catch (e: Exception) { null }
             val signers = pi?.signingInfo?.apkContentsSigners.orEmpty().flatMap { Hashes.ofBytes(it.toByteArray()) }
             if (signers.any { Defs.contains(Defs.file(c, "certs.txt"), it) })
-                return Hit(f.path, 2, "App installer signed with a certificate used by known spyware or stalkerware.")
+                return Hit(f.path, 3, "App installer signed with a certificate used by known spyware or stalkerware.")
             if (pi != null && Defs.contains(Defs.file(c, "pkgs.txt"), pi.packageName))
                 return Hit(f.path, 1, "App installer whose package name matches known spyware or stalkerware.")
             if (ext !in apkExt && ext != "zip" && ext != "jar")
@@ -105,7 +106,7 @@ object FileScan {
 
     private fun saveHits(h: List<Hit>) {
         Store.put("fileHits", h.joinToString("\n") { "${it.path}\t${it.level}\t${it.why}" })
-        Store.putLong("lastBadFiles", h.count { it.level == 2 }.toLong())
+        Store.putLong("lastBadFiles", h.count { it.level >= 2 }.toLong())
     }
 
     fun forget(path: String) = saveHits(lastHits().filter { it.path != path })
@@ -122,8 +123,7 @@ object FileScan {
         val started = System.currentTimeMillis()
         val found = ArrayList<Hit>()
         var files = 0L
-        if (allowed()) {
-            val root = Environment.getExternalStorageDirectory()
+        for (root in if (allowed()) listOfNotNull(Environment.getExternalStorageDirectory(), Card.root(c)) else emptyList()) {
             val stack = ArrayDeque<File>()
             stack.add(root)
             while (stack.isNotEmpty() && files < 400_000) {
@@ -152,7 +152,7 @@ object FileScan {
                     val path = it.substringAfter(' ').trim()
                     if (sha.length == 64) {
                         files++
-                        if (Defs.contains(hashes, sha)) found.add(Hit(path, 2, "Matches a known malware sample."))
+                        if (Defs.contains(hashes, sha) && sha !in Respond.trusted()) found.add(Hit(path, 3, "Matches a known malware sample."))
                     }
                 }
         }
@@ -165,16 +165,17 @@ object FileScan {
     }
 
     /** Folders where downloads and received files land. Watched so a bad file is flagged the moment it arrives. */
-    fun watchDirs(): List<File> {
+    fun watchDirs(c: Context): List<File> {
         val root = Environment.getExternalStorageDirectory()
-        return listOf(
+        val card = Card.root(c)?.let { listOf(File(it, "Download"), it) }.orEmpty().filter { it.isDirectory }
+        return card + listOf(
             "Download", "Documents", "Bluetooth", "Download/Telegram", "Telegram/Telegram Documents",
             "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents", "Download/Nearby Share", "Download/Quick Share"
         ).map { File(root, it) }.filter { it.isDirectory }
     }
 
-    fun observer(onFile: (File) -> Unit): FileObserver? {
-        val dirs = watchDirs()
+    fun observer(c: Context, onFile: (File) -> Unit): FileObserver? {
+        val dirs = watchDirs(c)
         if (!allowed() || dirs.isEmpty()) return null
         return object : FileObserver(dirs, CLOSE_WRITE or MOVED_TO) {
             override fun onEvent(event: Int, path: String?) {
@@ -235,7 +236,7 @@ object ProcScan {
             }
         }
         Store.putLong("lastProcN", count.toLong())
-        Store.putLong("lastBadProcs", out.count { it.level == 2 }.toLong())
+        Store.putLong("lastBadProcs", out.count { it.level >= 2 }.toLong())
         return out.sortedByDescending { it.level }
     }
 }

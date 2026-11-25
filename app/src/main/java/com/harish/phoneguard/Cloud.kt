@@ -43,6 +43,7 @@ object Cloud {
 
     private const val DAILY_CAP = 120
     private const val BAD = 3
+    private const val SURE = 8  // this many engines agreeing counts as confirmed, and is acted on automatically
     private val worker = Executors.newSingleThreadExecutor()
     private val queued = HashSet<String>()
 
@@ -84,6 +85,7 @@ object Cloud {
     /** Text for a scan result, or null when the engines did not flag it. */
     fun describe(v: Verdict?): Pair<Int, String>? = when {
         v == null || v.malicious <= 0 -> null
+        v.malicious >= SURE -> 3 to "Flagged as malicious by ${v.malicious} of ${v.total} antivirus engines on VirusTotal."
         v.malicious >= BAD -> 2 to "Flagged as malicious by ${v.malicious} of ${v.total} antivirus engines on VirusTotal. Uninstall or delete it."
         else -> 1 to "Flagged by ${v.malicious} of ${v.total} antivirus engines on VirusTotal. One or two flags are often a false alarm, but check where it came from."
     }
@@ -124,8 +126,13 @@ object Cloud {
                     if (bad >= BAD) {
                         Store.inc("wkMalware")
                         Store.log("Cloud check: ${item.label} flagged by $bad of $total engines")
-                        if (item.path.isNotEmpty()) FileScan.remember(FileScan.Hit(item.path, 2, describe(v)!!.second))
-                        else {
+                        val d = describe(v)!!
+                        if (item.path.isNotEmpty()) {
+                            val hit = FileScan.Hit(item.path, d.first, d.second)
+                            FileScan.remember(hit)
+                            Respond.files(c, listOf(hit))
+                        } else {
+                            Respond.app(c, Scanner.Hit(item.pkg, item.label, d.first, d.second))
                             Store.putLong("lastBad", Store.long("lastBad") + 1)
                             Store.put("badPkgs", (Store.str("badPkgs").split(',').filter { it.isNotBlank() } + item.pkg).distinct().joinToString(","))
                         }

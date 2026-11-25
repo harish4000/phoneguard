@@ -11,6 +11,8 @@ Personal Android app that keeps a phone fast and safe. Built for one family, sid
 **Protection** (works without Shizuku)
 - Antivirus scan of every installed and preinstalled app, every file in shared storage that can carry code, and every running process (process scan needs Shizuku). Runs daily, on every app install, and on files as they arrive in download folders.
 - Alert the moment any app gains screen control, notification access or device admin.
+- Automatic response to confirmed malware: files are quarantined for 30 days, apps lose screen control and notification access and are stopped (and disabled when Shizuku is running). Everything is reversible from the Protect tab, and anything marked safe is never flagged again. Uncertain findings are only reported.
+- Memory card support: the card is scanned like internal storage, and older photos, videos and large downloads can be moved to it to keep internal storage free.
 - Automatic scam alerts on incoming texts and chat messages, checked on the phone only.
 - Protection score, weekly report, weekly breach monitoring, unsafe Wi-Fi warning.
 - Web protection through filtering DNS (Quad9).

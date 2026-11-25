@@ -181,7 +181,8 @@ class MonitorService : Service() {
     }
 
     private fun scanAndAlert() {
-        val bad = Scanner.scan(this).filter { it.level == 2 }
+        val bad = Scanner.scan(this).filter { it.level >= 2 }
+        bad.forEach { Respond.app(this, it) }
         if (bad.isNotEmpty()) {
             Store.log("Scan: malware match in " + bad.joinToString(", ") { it.label })
             Store.inc("wkMalware")
@@ -191,12 +192,19 @@ class MonitorService : Service() {
 
     /** Daily: files changed since the last scan, and everything running right now. */
     private fun deepScan() {
-        val files = FileScan.scan(this, Store.long("lastFileScan")).filter { it.level == 2 }
+        val found = FileScan.scan(this, Store.long("lastFileScan")).filter { it.level >= 2 }
+        val taken = Respond.files(this, found)
+        if (taken.isNotEmpty()) {
+            Store.inc("wkMalware")
+            Notify.alert(this, 27, "Malware quarantined", taken.joinToString(", ") + ". Moved out of reach, nothing else to do. Restore from PhoneGuard, Protect, if this was a mistake.")
+        }
+        val files = found.filter { java.io.File(it.path).exists() }
         if (files.isNotEmpty()) {
             Store.inc("wkMalware")
-            Notify.alert(this, 27, "Malware file found", files.joinToString(", ") { it.path.substringAfterLast('/') } + ". Open PhoneGuard, Protect, to delete it.")
+            Notify.alert(this, 34, "Malware file found", files.joinToString(", ") { it.path.substringAfterLast('/') } + ". Open PhoneGuard, Protect, to delete it.")
         }
-        val procs = ProcScan.scan(this).orEmpty().filter { it.level == 2 }
+        Respond.purge(this)
+        val procs = ProcScan.scan(this).orEmpty().filter { it.level >= 2 }
         if (procs.isNotEmpty()) {
             Store.inc("wkMalware")
             Notify.alert(this, 28, "Malware is running", procs.joinToString(", ") { it.name } + ". Open PhoneGuard, Protect.")
@@ -206,14 +214,18 @@ class MonitorService : Service() {
     /** Real-time check of files as they land in download and received-file folders. */
     private fun ensureWatch() {
         if (watch != null) return
-        watch = FileScan.observer { f ->
+        watch = FileScan.observer(this) { f ->
             h.postDelayed({
                 try {
                     val hit = FileScan.check(this, f) ?: return@postDelayed
                     FileScan.remember(hit)
                     Store.log("File flagged: ${f.name} (${hit.why})")
-                    if (hit.level == 2) Store.inc("wkMalware")
-                    Notify.alert(this, 29, if (hit.level == 2) "Malware file received" else "Suspicious file received", "${f.name}: ${hit.why} Open PhoneGuard, Protect.")
+                    if (hit.level >= 2) Store.inc("wkMalware")
+                    if (Respond.files(this, listOf(hit)).isNotEmpty()) {
+                        Notify.alert(this, 29, "Malware quarantined", "${f.name} arrived and was moved out of reach before it could be opened. Restore from PhoneGuard, Protect, if this was a mistake.")
+                        return@postDelayed
+                    }
+                    Notify.alert(this, 29, if (hit.level >= 2) "Malware file received" else "Suspicious file received", "${f.name}: ${hit.why} Open PhoneGuard, Protect.")
                 } catch (e: Throwable) { }
             }, 2500)
         }
