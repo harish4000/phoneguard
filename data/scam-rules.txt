@@ -86,3 +86,9 @@
 2026-11-24	10	(claim|collect) (your )?(exclusive|free) (rewards|benefits)	matches gaming incentive lure
 2026-11-25	10	netflix clone streaming trial	promises free service to steal credentials or payment
 2026-11-25	10	(secure|protect) your (connection|account) before it's (cut off|locked)	Matches threat-based urgency pattern
+2026-11-26	10	booking (requires|needs) verification review	fake booking confirmation scams
+2026-11-26	10	recover your lost funds immediately	urgency to recover non-existent money
+2026-11-26	10	(unrecognized|unknown) device login attempt	fake security alerts about unauthorized logins
+2026-11-26	10	secure your (connection|account) before it's locked	threatening immediate lockout to force action
+2026-11-26	10	verify your (spotify|netflix) premium status	impersonating streaming services for billing fraud
+2026-11-26	10	(update|verify) (your )?(payment method|billing info) (to|in order to) (claim|prevent)	catches payment update urgency
