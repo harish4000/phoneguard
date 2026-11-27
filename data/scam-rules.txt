@@ -92,3 +92,13 @@
 2026-11-26	10	secure your (connection|account) before it's locked	threatening immediate lockout to force action
 2026-11-26	10	verify your (spotify|netflix) premium status	impersonating streaming services for billing fraud
 2026-11-26	10	(update|verify) (your )?(payment method|billing info) (to|in order to) (claim|prevent)	catches payment update urgency
+2026-11-27	10	sso auth facebook secure account	impersonating social login security alert
+2026-11-27	10	ledger live login access	impersonating crypto wallet security check
+2026-11-27	10	booking reservation requires verification	fake travel booking fraud
+2026-11-27	10	phantom wallet seed phrase backup	crypto wallet recovery scam
+2026-11-27	10	unusual activity on your profile	generic social media security scare
+2026-11-27	10	verify your identity details now	urgent identity verification demand
+2026-11-27	10	restore your lost funds immediately	fake financial recovery promise
+2026-11-27	10	(claim|redeem) (your )?(exclusive|unclaimed) (items|rewards)	catches fake reward claims
+2026-11-27	10	(confirm|verify) (your )?(identity) (to|in order to)	catches identity verification for scams
+2026-11-27	10	(avoid|prevent) (any|permanent) (interruption|cancellation)	catches urgency tactics in scams
