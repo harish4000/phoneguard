@@ -102,3 +102,4 @@
 2026-11-27	10	(claim|redeem) (your )?(exclusive|unclaimed) (items|rewards)	catches fake reward claims
 2026-11-27	10	(confirm|verify) (your )?(identity) (to|in order to)	catches identity verification for scams
 2026-11-27	10	(avoid|prevent) (any|permanent) (interruption|cancellation)	catches urgency tactics in scams
+2026-11-28	10	(secure|protect) your (account|wallet) (before|now)	generic urgency tactic to force immediate action
